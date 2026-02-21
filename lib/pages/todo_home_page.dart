@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:home_widget/home_widget.dart';
 
 class TodoHomePage extends StatefulWidget {
   const TodoHomePage({super.key, required this.user});
@@ -18,8 +21,12 @@ class _TodoHomePageState extends State<TodoHomePage> {
   final TextEditingController _addTaskTitleController = TextEditingController();
   final TextEditingController _addTaskDescriptionController =
       TextEditingController();
+  StreamSubscription<Uri?>? _widgetClickSubscription;
   late DateTime _selectedDate;
   bool _desktopRecurring = false;
+
+  bool get _isAndroidWidgetSupported =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -36,6 +43,13 @@ class _TodoHomePageState extends State<TodoHomePage> {
           toFirestore: (value, _) => value,
         );
     _resetRecurringTasksIfNeeded();
+    _syncTodayWidgetData();
+    if (_isAndroidWidgetSupported) {
+      HomeWidget.initiallyLaunchedFromHomeWidget().then(_handleWidgetAction);
+      _widgetClickSubscription = HomeWidget.widgetClicked.listen(
+        _handleWidgetAction,
+      );
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollDateSliderToSelected(animated: false);
     });
@@ -46,6 +60,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
     _dateScrollController.dispose();
     _addTaskTitleController.dispose();
     _addTaskDescriptionController.dispose();
+    _widgetClickSubscription?.cancel();
     super.dispose();
   }
 
@@ -84,6 +99,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
 
     if (hasUpdates) {
       await batch.commit();
+      await _syncTodayWidgetData();
     }
   }
 
@@ -132,6 +148,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
         'lastResetOn': today,
         'createdAt': Timestamp.now(),
       });
+      await _syncTodayWidgetData();
       return true;
     } on FirebaseException catch (e) {
       if (mounted) {
@@ -194,6 +211,17 @@ class _TodoHomePageState extends State<TodoHomePage> {
                       const SizedBox(height: 8),
                       TextField(
                         controller: _addTaskDescriptionController,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) async {
+                          final saved = await _createTask(
+                            title: _addTaskTitleController.text,
+                            description: _addTaskDescriptionController.text,
+                            isRecurringDaily: recurring,
+                          );
+                          if (saved && context.mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        },
                         minLines: 2,
                         maxLines: 4,
                         decoration: const InputDecoration(
@@ -319,6 +347,124 @@ class _TodoHomePageState extends State<TodoHomePage> {
       'isDone': value,
       'lastResetOn': nowKey,
     });
+    await _syncTodayWidgetData();
+  }
+
+  Future<void> _syncTodayWidgetData() async {
+    if (!_isAndroidWidgetSupported) {
+      return;
+    }
+
+    final todayKey = _dayKey(DateTime.now());
+    try {
+      final snapshot = await _tasksRef
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final docs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        final dateKey = data['dateKey'] as String?;
+        final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+        if (!isRecurringDaily) {
+          return dateKey == todayKey;
+        }
+        if (dateKey == null) {
+          return true;
+        }
+        return dateKey.compareTo(todayKey) <= 0;
+      }).toList()
+        ..sort((a, b) {
+          final aDone = (a.data()['isDone'] as bool?) ?? false;
+          final bDone = (b.data()['isDone'] as bool?) ?? false;
+          if (aDone != bDone) {
+            return aDone ? 1 : -1;
+          }
+          final aCreated =
+              (a.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+          final bCreated =
+              (b.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+          return bCreated.compareTo(aCreated);
+        });
+
+      final widgetTasks = docs.take(4).toList();
+      final now = DateTime.now();
+      final hour = now.hour.toString().padLeft(2, '0');
+      final minute = now.minute.toString().padLeft(2, '0');
+
+      await HomeWidget.saveWidgetData<String>('today_uid', widget.user.uid);
+      await HomeWidget.saveWidgetData<String>('today_title', 'Today');
+      for (var i = 0; i < 4; i++) {
+        if (i < widgetTasks.length) {
+          final data = widgetTasks[i].data();
+          final title = (data['title'] as String?) ?? 'Untitled task';
+          final isDone = (data['isDone'] as bool?) ?? false;
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_id', widgetTasks[i].id);
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_title', title);
+          await HomeWidget.saveWidgetData<String>(
+            'today_task_${i}_toggle_done',
+            isDone ? '0' : '1',
+          );
+          await HomeWidget.saveWidgetData<String>(
+            'today_task_${i}_is_done',
+            isDone ? '1' : '0',
+          );
+        } else {
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_id', '');
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_title', '');
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_toggle_done', '0');
+          await HomeWidget.saveWidgetData<String>('today_task_${i}_is_done', '0');
+        }
+      }
+      await HomeWidget.saveWidgetData<String>(
+        'today_updated_at',
+        '$hour:$minute',
+      );
+      await HomeWidget.updateWidget(
+        androidName: 'TodoTodayWidgetProvider',
+      );
+    } catch (_) {
+      // Ignore widget sync failures to keep app actions responsive.
+    }
+  }
+
+  Future<void> _handleWidgetAction(Uri? uri) async {
+    if (!_isAndroidWidgetSupported || uri == null) {
+      return;
+    }
+
+    final host = uri.host.toLowerCase();
+    if (host == 'add') {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (mounted) {
+          await _addTask();
+        }
+      });
+      return;
+    }
+
+    if (host == 'toggle') {
+      final taskId = uri.queryParameters['taskId'];
+      final done = uri.queryParameters['done'] == '1';
+      if (taskId == null || taskId.isEmpty) {
+        return;
+      }
+
+      try {
+        await _tasksRef.doc(taskId).update(<String, dynamic>{
+          'isDone': done,
+          'lastResetOn': _dayKey(DateTime.now()),
+        });
+        await _syncTodayWidgetData();
+      } on FirebaseException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Widget action failed: ${e.message ?? e.code}'),
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _showTaskDetailSheet(
@@ -342,6 +488,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
       builder: (context) {
         var isEditing = false;
         var isSaving = false;
+        var isDeleting = false;
         var editedTitle = initialTitle;
         var editedDescription = initialDescription;
         var editedIsRecurringDaily = initialIsRecurringDaily;
@@ -478,6 +625,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
                                             'isRecurringDaily':
                                                 editedIsRecurringDaily,
                                           });
+                                      await _syncTodayWidgetData();
                                       if (context.mounted) {
                                         Navigator.of(context).pop();
                                       }
@@ -518,6 +666,82 @@ class _TodoHomePageState extends State<TodoHomePage> {
                             ),
                           ),
                         ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: (isSaving || isDeleting)
+                              ? null
+                              : () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dialogContext) {
+                                      return AlertDialog(
+                                        title: const Text('Delete task?'),
+                                        content: const Text(
+                                          'This action cannot be undone.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(
+                                                dialogContext,
+                                              ).pop(false);
+                                            },
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () {
+                                              Navigator.of(
+                                                dialogContext,
+                                              ).pop(true);
+                                            },
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+
+                                  if (confirmed != true) {
+                                    return;
+                                  }
+
+                                  setSheetState(() {
+                                    isDeleting = true;
+                                  });
+
+                                  try {
+                                    await doc.reference.delete();
+                                    await _syncTodayWidgetData();
+                                    if (context.mounted) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  } on FirebaseException catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Failed to delete task: ${e.message ?? e.code}',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    setSheetState(() {
+                                      isDeleting = false;
+                                    });
+                                  }
+                                },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade700,
+                          ),
+                          child: Text(
+                            isDeleting ? 'Deleting...' : 'Delete task',
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -663,11 +887,13 @@ class _TodoHomePageState extends State<TodoHomePage> {
           TextField(
             controller: _addTaskTitleController,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(hintText: 'What did you do?'),
+            decoration: const InputDecoration(hintText: 'What do you do?'),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _addTaskDescriptionController,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _createTaskFromDesktopPanel(),
             minLines: 2,
             maxLines: 4,
             decoration: const InputDecoration(
@@ -700,7 +926,6 @@ class _TodoHomePageState extends State<TodoHomePage> {
   @override
   Widget build(BuildContext context) {
     final monthDays = _daysInCurrentMonth();
-    final selectedDayKey = _dayKey(_selectedDate);
     final isDesktopWeb = kIsWeb && MediaQuery.of(context).size.width >= 1000;
 
     return Scaffold(
@@ -777,16 +1002,7 @@ class _TodoHomePageState extends State<TodoHomePage> {
                   },
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Tasks for $selectedDayKey',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-              ),
+              const SizedBox(height: 6),
               const Divider(height: 1),
               Expanded(
                 child: isDesktopWeb

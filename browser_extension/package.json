@@ -1,0 +1,15 @@
+{
+  "name": "simpletodo-browser-extension",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/popup.js --bundle --outfile=popup.js --format=iife --target=es2020"
+  },
+  "dependencies": {
+    "firebase": "^12.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
+}

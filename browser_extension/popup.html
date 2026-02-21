@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SimpleTodo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>Today</h1>
+        <button id="logoutBtn" class="icon-btn" hidden title="Sign out">↪</button>
+      </header>
+
+      <p id="loadingText">Loading...</p>
+
+      <section id="authSection" hidden>
+        <input id="emailInput" type="email" placeholder="Email" />
+        <input id="passwordInput" type="password" placeholder="Password" />
+        <button id="authSubmitBtn">Sign in</button>
+        <button id="switchModeBtn" class="ghost">Create account</button>
+        <p id="authError" class="error" hidden></p>
+      </section>
+
+      <section id="todoSection" hidden>
+        <ul id="taskList"></ul>
+        <div class="composer">
+          <div class="composer-row">
+            <input id="titleInput" type="text" placeholder="What do you do?" />
+            <button id="addTaskBtn" class="icon-btn" title="Add task" aria-label="Add task">✓</button>
+          </div>
+          <textarea id="descInput" placeholder="Description (optional)"></textarea>
+          <label class="check">
+            <input id="recurringInput" type="checkbox" />
+            <span>Recurring daily</span>
+          </label>
+        </div>
+      </section>
+    </main>
+    <div id="taskSheetBackdrop" class="sheet-backdrop" hidden></div>
+    <section id="taskSheet" class="sheet" hidden>
+      <button id="sheetEditBtn">Edit</button>
+      <button id="sheetDeleteBtn" class="ghost">Delete</button>
+      <button id="sheetCancelBtn" class="ghost">Cancel</button>
+    </section>
+    <script src="popup.js"></script>
+  </body>
+  </html>
