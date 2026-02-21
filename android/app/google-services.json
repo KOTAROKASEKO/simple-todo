@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "512858444455",
+    "project_id": "simpletodo-19a48",
+    "storage_bucket": "simpletodo-19a48.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:512858444455:android:cf604cca1e2b00ddb28182",
+        "android_client_info": {
+          "package_name": "com.example.simpletodo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAwOCD1LVbLHEUMapu_L5QNRXCC5Thka9k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
