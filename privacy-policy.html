@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — Cross Platform Todo</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --text: #1a1d26;
+      --muted: #5c6370;
+      --accent: #2563eb;
+      --border: #e2e8f0;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+      font-size: 1rem;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .wrap {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 4vw, 2.125rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+      line-height: 1.2;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.9375rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 1.75rem 1.5rem;
+    }
+
+    .card + .card {
+      margin-top: 1.25rem;
+    }
+
+    h2 {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem;
+      color: var(--text);
+    }
+
+    .card h2:first-child {
+      margin-top: 0;
+    }
+
+    p {
+      margin: 0 0 1rem;
+      color: var(--text);
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul {
+      margin: 0 0 1rem;
+      padding-left: 1.25rem;
+      color: var(--text);
+    }
+
+    li {
+      margin-bottom: 0.35rem;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.9375rem;
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      text-align: center;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Cross Platform Todo (“we”, “the app”)</p>
+      <p class="meta">Last updated: <time datetime="2026-03-22">March 22, 2026</time></p>
+    </header>
+
+    <article class="card">
+      <p>
+        This policy describes how Cross Platform Todo handles information when you use our mobile and web
+        applications. By using the app, you agree to this policy.
+      </p>
+    </article>
+
+    <article class="card">
+      <h2>Information you provide</h2>
+      <p>We process data you enter or upload to use app features, for example:</p>
+      <ul>
+        <li>Account details when you sign in (e.g. email), handled by our authentication provider.</li>
+        <li>Tasks, lists, journal entries, notes, and similar content you create.</li>
+        <li>Photos or images you attach to journal entries, if you use that feature.</li>
+        <li>Preferences and settings you configure in the app.</li>
+      </ul>
+
+      <h2>Automatically collected data</h2>
+      <p>
+        We and our service providers may process technical data needed to run and secure the service, such as
+        device type, OS version, app version, crash or diagnostic logs, and push notification tokens if you
+        enable notifications.
+      </p>
+
+      <h2>How we use information</h2>
+      <ul>
+        <li>To provide, sync, and back up your content across your devices.</li>
+        <li>To authenticate you and keep your account secure.</li>
+        <li>To send optional reminders or notifications if you turn them on.</li>
+        <li>To improve reliability and fix issues.</li>
+      </ul>
+      <p>We do not sell your personal information.</p>
+
+      <h2>Where data is stored</h2>
+      <p>
+        Data is stored using cloud infrastructure operated by
+        <a href="https://firebase.google.com/support/privacy" rel="noopener noreferrer">Google Firebase</a>
+        (including services such as Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, and Cloud
+        Messaging as applicable). Google’s terms and privacy policy also apply to their processing.
+      </p>
+
+      <h2>Retention and deletion</h2>
+      <p>
+        We keep your data while your account exists and as needed to provide the service. You may delete content
+        within the app where supported. You can request account or data deletion by contacting us (see below).
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        The app is not directed at children under 13 (or the minimum age required in your region). We do not
+        knowingly collect personal information from children.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        We may update this policy from time to time. We will adjust the “Last updated” date above. Continued use
+        of the app after changes means you accept the revised policy.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        For privacy questions or requests, contact us at
+        <a href="mailto:support@example.com">support@example.com</a>.
+      </p>
+      <p class="muted">Update the contact email in this file before linking from app stores.</p>
+    </article>
+
+    <footer>
+      Cross Platform Todo
+    </footer>
+  </div>
+</body>
+</html>

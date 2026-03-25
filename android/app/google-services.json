@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:512858444455:android:cf604cca1e2b00ddb28182",
         "android_client_info": {
-          "package_name": "com.example.simpletodo"
+          "package_name": "com.crossplatformtodo"
         }
       },
       "oauth_client": [],

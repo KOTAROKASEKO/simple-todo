@@ -12,6 +12,7 @@
   },
   "permissions": [
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "alarms"
   ]
 }

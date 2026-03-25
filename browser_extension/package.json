@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/popup.js --bundle --outfile=popup.js --format=iife --target=es2020"
+    "build": "esbuild src/popup.js --bundle --outfile=popup.js --format=iife --target=es2020 && esbuild src/background.js --bundle --outfile=background.js --format=iife --target=es2020"
   },
   "dependencies": {
     "firebase": "^12.1.0"

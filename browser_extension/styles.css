@@ -1,12 +1,13 @@
 :root {
   color-scheme: light;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
 body {
   margin: 0;
-  background: #f6f7f8;
+  background: linear-gradient(180deg, #f6f7fb 0%, #eef2f7 100%);
   min-height: 100vh;
+  color: #101828;
 }
 
 [hidden] {
@@ -14,25 +15,33 @@ body {
 }
 
 .container {
-  width: 100%;
-  max-width: 520px;
+  width: 380px;
   min-height: 100vh;
   padding: 14px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  position: relative;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 10px;
 }
 
 h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 3px 0 0;
+  color: #667085;
+  font-size: 12px;
 }
 
 input,
@@ -40,28 +49,58 @@ textarea,
 button {
   width: 100%;
   box-sizing: border-box;
-  border-radius: 10px;
-  border: 1px solid #d6d9dd;
+  border-radius: 11px;
+  border: 1px solid #d0d5dd;
   padding: 10px;
-  font-size: 14px;
+  font-size: 13px;
+  font: inherit;
+}
+
+input,
+textarea {
+  background: #fff;
+  color: #101828;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #98a2b3;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid #98a2ff;
+  outline-offset: 1px;
 }
 
 textarea {
   resize: vertical;
-  min-height: 60px;
+  min-height: 64px;
 }
 
 button {
-  background: #111;
-  border-color: #111;
+  background: #2f6df6;
+  border-color: #2f6df6;
   color: #fff;
   cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  filter: brightness(0.97);
 }
 
 button.ghost {
-  background: transparent;
-  color: #111;
-  border-color: #d6d9dd;
+  background: #fff;
+  color: #344054;
+  border-color: #d0d5dd;
+}
+
+#loadingText {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
 }
 
 #authSection,
@@ -70,62 +109,176 @@ button.ghost {
   gap: 8px;
 }
 
+#authSection {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field span {
+  font-size: 12px;
+  color: #667085;
+}
+
 #todoSection {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  gap: 10px;
 }
 
-.composer {
-  margin-top: 10px;
+.pomodoro-peek {
+  position: absolute;
+  top: 38px;
+  left: -8px;
+  width: 44px;
+  height: 34px;
+  border-radius: 0 12px 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  z-index: 20;
+  transition: width 160ms ease;
+}
+
+.pomodoro-peek:hover {
+  width: 128px;
+}
+
+.pomodoro-peek-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pomodoro-peek-label {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.pomodoro-peek:hover .pomodoro-peek-label {
+  opacity: 1;
+}
+
+.focus-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
   padding: 10px;
-  border-top: 1px solid #222;
-  position: sticky;
-  bottom: 0;
-  background: #111;
-  border-radius: 12px 12px 0 0;
-  padding-bottom: 10px;
+  display: grid;
+  gap: 8px;
 }
 
-.composer-row {
+.focus-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.composer-row input {
-  flex: 1;
-}
-
-.composer-row .icon-btn {
-  background: #111;
-  border-color: #111;
-  color: #fff;
-}
-
-.check {
+.focus-header {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
+}
+
+.focus-title {
+  margin: 0;
   font-size: 13px;
-  color: #fff;
+  font-weight: 700;
 }
 
-.check input {
+.focus-subtitle {
+  margin: 2px 0 0;
+  color: #667085;
+  font-size: 11px;
+}
+
+.focus-time {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1d2939;
+}
+
+.focus-timer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.focus-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.focus-duration-row input {
+  width: 100%;
+}
+
+.focus-duration-row button {
   width: auto;
-  accent-color: #fff;
+  min-width: 74px;
 }
 
-.composer input,
-.composer textarea {
+.focus-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.focus-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 148px;
+  overflow-y: auto;
+}
+
+.focus-task-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 6px 8px;
   background: #fff;
-  color: #111;
 }
 
-.composer input::placeholder,
-.composer textarea::placeholder {
-  color: #666;
+.focus-task-item p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #344054;
+}
+
+.focus-task-item.done p {
+  text-decoration: line-through;
+  color: #98a2b3;
+}
+
+.focus-task-empty {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 0;
 }
 
 #taskList {
@@ -140,13 +293,24 @@ button.ghost {
 }
 
 .task {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
   padding: 10px;
   display: grid;
   gap: 6px;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+.task:hover {
+  border-color: #d0d5dd;
+}
+
+.task.empty {
+  color: #667085;
+  justify-items: center;
+  padding: 14px 10px;
 }
 
 .task-top {
@@ -154,6 +318,14 @@ button.ghost {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.task-top small {
+  color: #667085;
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #f2f4f7;
+  border-radius: 999px;
 }
 
 .task-main {
@@ -165,49 +337,110 @@ button.ghost {
 
 .task-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
+  color: #101828;
 }
 
 .task.done .task-title {
   text-decoration: line-through;
-  color: #666;
+  color: #98a2b3;
 }
 
 .task-desc {
   margin: 0;
   font-size: 12px;
-  color: #333;
+  color: #475467;
   white-space: pre-wrap;
 }
 
-.error {
-  margin: 0;
-  color: #c00;
-  font-size: 12px;
+.composer {
+  position: sticky;
+  bottom: 0;
+  margin-top: 4px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.08);
 }
 
-#loadingText {
-  margin: 0 0 8px 0;
-  font-size: 13px;
-  color: #666;
+.composer-title {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #667085;
+}
+
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-input-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.title-input-wrap input {
+  width: 100%;
+  padding-right: 84px;
+}
+
+.input-icons {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .icon-btn {
-  width: 40px;
-  min-width: 40px;
-  height: 36px;
+  width: 38px;
+  min-width: 38px;
+  height: 34px;
   padding: 0;
   border-radius: 10px;
-  border: 1px solid #d6d9dd;
+  border: 1px solid #d0d5dd;
   background: #fff;
-  color: #111;
-  font-size: 18px;
+  color: #344054;
+  font-size: 16px;
   line-height: 1;
+  font-weight: 600;
+}
+
+.toggle-btn {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.toggle-btn[aria-pressed='true'] {
+  background: #eaf1ff;
+  border-color: #b7ceff;
+  color: #2f6df6;
+}
+
+.recurring-btn.active {
+  background: #e9f9ee;
+  border-color: #9bdcb1;
+  color: #157341;
+}
+
+.composer-row #addTaskBtn {
+  background: #2f6df6;
+  border-color: #2f6df6;
+  color: #fff;
 }
 
 .task-toggle {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   width: 28px;
   min-width: 28px;
@@ -215,22 +448,36 @@ button.ghost {
   border-radius: 999px;
 }
 
+.task.done .task-toggle {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #3b4cca;
+}
+
+.error {
+  margin: 0;
+  color: #b42318;
+  font-size: 12px;
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(2px);
 }
 
 .sheet {
   position: fixed;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
   padding: 10px;
   display: grid;
   gap: 8px;
   z-index: 10;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.2);
 }

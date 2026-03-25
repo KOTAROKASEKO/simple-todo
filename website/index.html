@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Todo Cross Platform helps you organize tasks, keep a journal, and use reminders. Optional reflection tools for personal productivity. Sign in to sync across devices." />
+  <title>Todo Cross Platform</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="nav">
+    <a class="nav__brand" href="#">Todo <span>Cross Platform</span></a>
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#sync">Sync</a>
+      <a href="#get-app">Get the app</a>
+      <a href="../privacy-policy.html">Privacy</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero__inner">
+        <p class="hero__badge">Tasks · Journal · Focus</p>
+        <h1 id="hero-title">Your day, organized in one place</h1>
+        <p class="hero__lead">
+          Plan tasks, write journal entries, and use optional reflection tools for personal growth—on Android and iOS,
+          with your content tied to your account when you sign in.
+        </p>
+        <div class="hero__cta">
+          <a class="btn btn--primary" href="#get-app">Get the app</a>
+          <a class="btn btn--ghost" href="../privacy-policy.html">Privacy policy</a>
+        </div>
+      </div>
+      <div class="mockup" aria-hidden="true">
+        <div class="mockup__inner">
+          <div class="mockup__bar">Today</div>
+          <div class="mockup__body">
+            <div class="mock-row mock-row--short"></div>
+            <div class="mock-row"></div>
+            <div class="mock-row mock-row--check">Morning review</div>
+            <div class="mock-row mock-row--check">Ship the update</div>
+            <div class="mock-row mock-row--check">Journal — 5 min</div>
+            <div class="mock-row" style="margin-top: 0.5rem"></div>
+            <div class="mock-row mock-row--short"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features" aria-labelledby="features-title">
+      <h2 class="section__title" id="features-title">What you can do</h2>
+      <p class="section__subtitle">
+        After you sign in, your data can sync across your devices using the same account.
+      </p>
+      <div class="grid">
+        <article class="card">
+          <div class="card__icon" aria-hidden="true">✓</div>
+          <h3>Tasks &amp; today</h3>
+          <p>Add tasks, mark them complete, and see today’s list—including home screen widgets on Android where supported.</p>
+        </article>
+        <article class="card">
+          <div class="card__icon" aria-hidden="true">📓</div>
+          <h3>Journal</h3>
+          <p>Write entries with categories and optional photos. Content is stored with your account so it remains available when you reinstall.</p>
+        </article>
+        <article class="card">
+          <div class="card__icon" aria-hidden="true">💡</div>
+          <h3>Reflection</h3>
+          <p>Optional tools to note what went wrong, review patterns, and use in-app analysis features—intended for adults managing their own productivity.</p>
+        </article>
+        <article class="card">
+          <div class="card__icon" aria-hidden="true">⏱</div>
+          <h3>Timers &amp; reminders</h3>
+          <p>Use timers and notifications where you enable them on your device.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="sync" aria-labelledby="sync-title">
+      <h2 class="section__title" id="sync-title">Account and sync</h2>
+      <p class="section__subtitle">
+        Sign-in uses industry-standard services. We do not sell your personal data. See the privacy policy for details.
+      </p>
+      <div class="strip">
+        <p>
+          <strong>Firebase (Google)</strong> provides authentication, database, file storage, and messaging used by the app.
+          Details are in our <a href="../privacy-policy.html">privacy policy</a>.
+        </p>
+      </div>
+    </section>
+
+    <!-- If you publish on the App Store, add a button with your real https://apps.apple.com/app/... URL only. -->
+    <section class="section" id="get-app" aria-labelledby="get-title">
+      <h2 class="section__title" id="get-title">Download Todo Cross Platform</h2>
+      <p class="section__subtitle">
+        Available on Google Play for Android.
+      </p>
+      <div class="hero__cta" style="justify-content: center">
+        <a class="btn btn--primary" href="https://play.google.com/store/apps/details?id=com.crossplatformtodo">Google Play</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__links">
+      <a href="../privacy-policy.html">Privacy policy</a>
+      <a href="#features">Features</a>
+    </div>
+    <p>© <span id="y"></span> Todo Cross Platform</p>
+  </footer>
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

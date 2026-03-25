@@ -8,8 +8,15 @@
   </head>
   <body>
     <main class="container">
+      <button id="pomodoroPeekBtn" class="pomodoro-peek" type="button" title="Open Pomodoro" aria-label="Open Pomodoro">
+        <span class="pomodoro-peek-icon">⏱</span>
+        <span class="pomodoro-peek-label">Pomodoro</span>
+      </button>
       <header class="header">
-        <h1>Today</h1>
+        <div>
+          <h1>SimpleTodo</h1>
+          <p class="subtitle">Focus on what matters today</p>
+        </div>
         <button id="logoutBtn" class="icon-btn" hidden title="Sign out">↪</button>
       </header>
 
@@ -24,16 +31,55 @@
       </section>
 
       <section id="todoSection" hidden>
+        <section id="focusSection" class="focus-panel" hidden>
+          <div class="focus-header">
+            <div>
+              <p class="focus-title">Quality 25</p>
+              <p class="focus-subtitle">Quick prep for focused work</p>
+            </div>
+            <div class="focus-header-actions">
+              <p id="focusTimerText" class="focus-time">25:00</p>
+              <button id="closeFocusPanelBtn" class="icon-btn ghost" type="button" title="Close Pomodoro" aria-label="Close Pomodoro">←</button>
+            </div>
+          </div>
+          <div class="focus-timer-actions">
+            <button id="focusStartPauseBtn" class="ghost" type="button">Start</button>
+            <button id="focusResetBtn" class="ghost" type="button">Reset</button>
+          </div>
+          <label class="field">
+            <span>Duration (minutes)</span>
+            <div class="focus-duration-row">
+              <input id="focusDurationInput" type="number" min="1" max="180" step="1" value="25" />
+              <button id="focusApplyDurationBtn" class="ghost" type="button">Apply</button>
+            </div>
+          </label>
+          <form id="focusTaskForm" class="focus-add-row">
+            <input id="focusTaskInput" type="text" placeholder="e.g. 30s meditation, phone in other room" />
+            <button id="addFocusTaskBtn" class="icon-btn" type="submit" title="Add focus task" aria-label="Add focus task">+</button>
+          </form>
+          <ul id="focusTaskList" class="focus-task-list"></ul>
+        </section>
         <ul id="taskList"></ul>
         <div class="composer">
+          <p class="composer-title">Add task</p>
           <div class="composer-row">
-            <input id="titleInput" type="text" placeholder="What do you do?" />
+            <div class="title-input-wrap">
+              <input id="titleInput" type="text" placeholder="What needs to be done?" />
+              <div class="input-icons">
+                <button id="alarmBtn" class="icon-btn toggle-btn" type="button" title="Add reminder" aria-label="Add reminder" aria-pressed="false">⏰</button>
+                <button id="recurringBtn" class="icon-btn toggle-btn recurring-btn" type="button" title="Recurring daily" aria-label="Recurring daily" aria-pressed="false">↻</button>
+              </div>
+            </div>
             <button id="addTaskBtn" class="icon-btn" title="Add task" aria-label="Add task">✓</button>
           </div>
           <textarea id="descInput" placeholder="Description (optional)"></textarea>
-          <label class="check">
-            <input id="recurringInput" type="checkbox" />
-            <span>Recurring daily</span>
+          <label class="field">
+            <span>Date</span>
+            <input id="dateInput" type="date" />
+          </label>
+          <label id="reminderTimeWrap" class="field" hidden>
+            <span>Reminder time</span>
+            <input id="reminderTimeInput" type="time" value="09:00" />
           </label>
         </div>
       </section>

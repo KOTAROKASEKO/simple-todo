@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:simpletodo/auth_gate.dart';
 
 class TodoApp extends StatelessWidget {
@@ -11,49 +10,59 @@ class TodoApp extends StatelessWidget {
       title: 'Firebase Todo',
       theme: ThemeData(
         useMaterial3: true,
-        textTheme: GoogleFonts.quicksandTextTheme(),
+        // Use system font so no network font fetch (avoids CORS/fetch errors on web)
+        fontFamily: 'sans-serif',
+        textTheme: ThemeData.light().textTheme.apply(fontFamily: 'sans-serif'),
         brightness: Brightness.light,
-        scaffoldBackgroundColor: Colors.white,
+        scaffoldBackgroundColor: const Color(0xFFF6F7F9),
         colorScheme: const ColorScheme.light(
-          primary: Colors.black,
+          primary: Color(0xFF111111),
           onPrimary: Colors.white,
-          secondary: Colors.black,
+          secondary: Color(0xFF111111),
           onSecondary: Colors.white,
           surface: Colors.white,
-          onSurface: Colors.black,
+          onSurface: Color(0xFF161616),
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
+          backgroundColor: Color(0xFFF6F7F9),
+          foregroundColor: Color(0xFF111111),
           elevation: 0,
           scrolledUnderElevation: 0,
         ),
-        dividerColor: const Color(0xFFE6E6E6),
+        dividerColor: Color(0xFFE4E6EB),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFE9EBF1)),
+          ),
+        ),
         inputDecorationTheme: const InputDecorationTheme(
           filled: true,
-          fillColor: Colors.white,
+          fillColor: Color(0xFFFDFDFD),
           contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFD9D9D9)),
+            borderSide: BorderSide(color: Color(0xFFE1E4EA)),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Color(0xFFD9D9D9)),
+            borderSide: BorderSide(color: Color(0xFFE1E4EA)),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.all(Radius.circular(12)),
-            borderSide: BorderSide(color: Colors.black, width: 1.2),
+            borderSide: BorderSide(color: Color(0xFF111111), width: 1.3),
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            backgroundColor: Colors.black,
+            backgroundColor: const Color(0xFF111111),
             foregroundColor: Colors.white,
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(12)),
             ),
-            minimumSize: const Size.fromHeight(48),
+            minimumSize: const Size(0, 48),
           ),
         ),
       ),

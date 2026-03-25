@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:label="simpletodo"
         android:name="${applicationName}"
@@ -35,6 +38,12 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <activity
+            android:name=".WidgetConfigureActivity"
+            android:exported="false"
+            android:theme="@style/WidgetConfigureTheme"
+            android:excludeFromRecents="true" />
+
         <receiver
             android:name=".TodoTodayWidgetProvider"
             android:exported="false">
@@ -58,9 +67,14 @@
             android:name=".WidgetToggleReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.example.simpletodo.action.WIDGET_TOGGLE" />
+                <action android:name="com.crossplatformtodo.action.WIDGET_TOGGLE" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name=".TodoTodayWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

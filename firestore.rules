@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Client must not add or change server-only field (merge updates must not be rejected when doc already has it).
+    function noServerReminderFieldsOnCreate() {
+      return !('reminderLastSentAt' in request.resource.data);
+    }
+    function noServerReminderFieldsOnUpdate() {
+      return !('reminderLastSentAt' in request.resource.data)
+        || (('reminderLastSentAt' in resource.data) && request.resource.data.reminderLastSentAt == resource.data.reminderLastSentAt);
+    }
+
+    match /todo/{userId}/tasks/{taskId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && noServerReminderFieldsOnCreate();
+      allow update: if isOwner(userId) && noServerReminderFieldsOnUpdate();
+      allow delete: if isOwner(userId);
+    }
+
+    match /todo/{userId}/focus_tasks/{taskId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && noServerReminderFieldsOnCreate();
+      allow update: if isOwner(userId) && noServerReminderFieldsOnUpdate();
+      allow delete: if isOwner(userId);
+    }
+
+    match /todo/{userId}/deviceTokens/{tokenId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.token == tokenId
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if isOwner(userId);
+    }
+
+    match /todo/{userId}/mistakes/{mistakeId} {
+      allow read, create, update, delete: if isOwner(userId);
+    }
+
+    match /todo/{userId}/journal_entries/{entryId} {
+      allow read, create, update, delete: if isOwner(userId);
+    }
+
+    match /todo/{userId}/mistake_analyses/{analysisId} {
+      allow read, create, update, delete: if isOwner(userId);
+    }
+
+    match /dailyCheckSettings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

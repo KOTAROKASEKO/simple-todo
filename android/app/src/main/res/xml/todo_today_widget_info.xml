@@ -4,5 +4,7 @@
     android:minHeight="140dp"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/todo_today_widget"
+    android:configure="com.crossplatformtodo.WidgetConfigureActivity"
     android:resizeMode="horizontal|vertical"
-    android:widgetCategory="home_screen" />
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable" />
