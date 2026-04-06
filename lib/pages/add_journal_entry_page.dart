@@ -3,8 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
+import 'package:simpletodo/services/journal_store.dart';
 import 'package:simpletodo/widgets/liquid_glass_app_bar.dart';
 
 /// Full-screen journal entry page with a single text field that expands
@@ -13,9 +15,12 @@ class AddJournalEntryPage extends StatefulWidget {
   const AddJournalEntryPage({
     super.key,
     required this.journalRef,
+    this.journalStore,
   });
 
   final CollectionReference<Map<String, dynamic>> journalRef;
+  /// When set (mobile), the new doc is mirrored into Isar immediately.
+  final JournalStore? journalStore;
 
   @override
   State<AddJournalEntryPage> createState() => _AddJournalEntryPageState();
@@ -38,12 +43,30 @@ String _categoryLabel(String value) {
 }
 
 class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
+  static const String _prefJournalAiFeedback = 'journal_ai_feedback_enabled';
+
   final TextEditingController _contentController = TextEditingController();
   bool _isSaving = false;
   final List<String> _imagePaths = [];
   final ImagePicker _picker = ImagePicker();
+  /// Persisted default for category sheet: whether surprise AI feedback is requested.
+  bool _journalAiFeedbackEnabled = true;
 
   bool get _hasUnsavedText => _contentController.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadJournalAiFeedbackPref();
+  }
+
+  Future<void> _loadJournalAiFeedbackPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _journalAiFeedbackEnabled = prefs.getBool(_prefJournalAiFeedback) ?? true;
+    });
+  }
 
   @override
   void dispose() {
@@ -135,11 +158,23 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
         'category': category,
         'order': now.millisecondsSinceEpoch,
         'createdAt': FieldValue.serverTimestamp(),
+        'journalAiFeedbackRequested': _journalAiFeedbackEnabled,
       };
       if (imageRefs.isNotEmpty) {
         data['imagePaths'] = imageRefs;
       }
       await docRef.set(data);
+      await widget.journalStore?.ingestAfterRemoteCreate(
+        docRef.id,
+        <String, dynamic>{
+          'content': content,
+          'category': category,
+          'order': now.millisecondsSinceEpoch,
+          'createdAt': Timestamp.fromDate(now),
+          'journalAiFeedbackRequested': _journalAiFeedbackEnabled,
+          if (imageRefs.isNotEmpty) 'imagePaths': imageRefs,
+        },
+      );
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
@@ -186,39 +221,105 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'Choose category',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setModalState) {
+          const aiPurple = Color(0xFF6366F1);
+
+          Future<void> toggleAi() async {
+            setState(() {
+              _journalAiFeedbackEnabled = !_journalAiFeedbackEnabled;
+            });
+            setModalState(() {});
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setBool(
+              _prefJournalAiFeedback,
+              _journalAiFeedbackEnabled,
+            );
+          }
+
+          return SafeArea(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-              ..._kJournalCategories.map((category) {
-                return ListTile(
-                  title: Text(_categoryLabel(category)),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _saveWithCategory(category);
-                  },
-                );
-              }),
-            ],
-          ),
-        ),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Choose category',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'AI might drop a comment on your journal',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      height: 1.35,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Tap icon to change',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      height: 1.3,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: _journalAiFeedbackEnabled
+                                  ? 'AI feedback on (tap to turn off)'
+                                  : 'AI feedback off (tap to turn on)',
+                              icon: Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 26,
+                                color: _journalAiFeedbackEnabled
+                                    ? aiPurple
+                                    : Colors.grey.shade500,
+                              ),
+                              onPressed: toggleAi,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  ..._kJournalCategories.map((category) {
+                    return ListTile(
+                      title: Text(_categoryLabel(category)),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        _saveWithCategory(category);
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -353,7 +454,7 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
             bottom: !keyboardOpen,
             child: SizedBox.expand(
               child: Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, bottomPadding),
+                padding: EdgeInsets.fromLTRB(12, 4, 12, bottomPadding),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -386,7 +487,12 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
                             borderRadius: BorderRadius.circular(16),
                             borderSide: const BorderSide(color: _pageBackground),
                           ),
-                          contentPadding: const EdgeInsets.all(20),
+                          contentPadding: const EdgeInsets.fromLTRB(
+                            16,
+                            16,
+                            16,
+                            20,
+                          ),
                           filled: true,
                           fillColor: _pageBackground,
                         ),

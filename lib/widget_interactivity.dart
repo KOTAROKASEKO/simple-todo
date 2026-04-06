@@ -96,7 +96,14 @@ Future<bool> _syncToggleToServer(String taskId, bool shouldMarkDone) async {
     final taskData = taskSnap.data() ?? <String, dynamic>{};
     final isRecurringDaily = (taskData['isRecurringDaily'] as bool?) ?? false;
     if (!isRecurringDaily) {
-      await taskRef.update(<String, dynamic>{'isDone': shouldMarkDone});
+      final todayKey = _dayKey(DateTime.now());
+      final u = <String, dynamic>{'isDone': shouldMarkDone};
+      if (shouldMarkDone) {
+        u['completedOnDayKey'] = todayKey;
+      } else {
+        u['completedOnDayKey'] = FieldValue.delete();
+      }
+      await taskRef.update(u);
     } else {
       final todayKey = _dayKey(DateTime.now());
       final texts = _taskChecklistTextsFromData(taskData);
@@ -249,6 +256,7 @@ Future<void> _syncTodayWidgetDataForUid(String uid) async {
     final data = widgetTasks[i].data();
     final title = (data['title'] as String?) ?? 'Untitled task';
     final isDone = _isTaskDoneForDate(data, DateTime.now());
+    final checklist = _taskChecklistFromDataForDate(data, DateTime.now());
     await HomeWidget.saveWidgetData<String>('today_task_${i}_id', widgetTasks[i].id);
     await HomeWidget.saveWidgetData<String>('today_task_${i}_title', title);
     await HomeWidget.saveWidgetData<String>(
@@ -264,7 +272,68 @@ Future<void> _syncTodayWidgetDataForUid(String uid) async {
       'today_task_${i}_is_recurring',
       isRecurring ? '1' : '0',
     );
+    await HomeWidget.saveWidgetData<String>(
+      'today_task_${i}_checklist_count',
+      checklist.length.toString(),
+    );
+    for (var j = 0; j < checklist.length; j++) {
+      await HomeWidget.saveWidgetData<String>(
+        'today_task_${i}_checklist_${j}_text',
+        checklist[j].text,
+      );
+      await HomeWidget.saveWidgetData<String>(
+        'today_task_${i}_checklist_${j}_is_done',
+        checklist[j].isDone ? '1' : '0',
+      );
+    }
   }
   await HomeWidget.saveWidgetData<String>('today_updated_at', '$hour:$minute');
   await HomeWidget.updateWidget(androidName: 'TodoTodayWidgetProvider');
+}
+
+List<_TaskChecklistItem> _taskChecklistFromDataForDate(
+  Map<String, dynamic> data,
+  DateTime date,
+) {
+  final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+  if (!isRecurringDaily) {
+    return _taskChecklistFromData(data);
+  }
+  final texts = _taskChecklistTextsFromData(data);
+  if (texts.isEmpty) {
+    return const <_TaskChecklistItem>[];
+  }
+  final dayKey = _dayKey(date);
+  final bools = _recurringChecklistDoneBoolsForDay(data, dayKey, texts.length);
+  return List.generate(
+    texts.length,
+    (i) => _TaskChecklistItem(text: texts[i], isDone: bools[i]),
+  );
+}
+
+List<_TaskChecklistItem> _taskChecklistFromData(Map<String, dynamic> data) {
+  final raw = data['checklist'];
+  if (raw is! List) {
+    return const <_TaskChecklistItem>[];
+  }
+  final items = <_TaskChecklistItem>[];
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final text = (entry['text'] as String?)?.trim() ?? '';
+    if (text.isEmpty) {
+      continue;
+    }
+    final isDone = (entry['isDone'] as bool?) ?? false;
+    items.add(_TaskChecklistItem(text: text, isDone: isDone));
+  }
+  return items;
+}
+
+class _TaskChecklistItem {
+  const _TaskChecklistItem({required this.text, required this.isDone});
+
+  final String text;
+  final bool isDone;
 }

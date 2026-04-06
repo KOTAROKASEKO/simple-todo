@@ -48,6 +48,7 @@ class EditTaskPage extends StatefulWidget {
 class _EditTaskPageState extends State<EditTaskPage> {
   late final TextEditingController _titleController;
   final List<TextEditingController> _checklistControllers = [];
+  final List<FocusNode> _checklistFocusNodes = [];
   late bool _isRecurringDaily;
   late bool _hasReminder;
   late TimeOfDay? _reminderTime;
@@ -67,6 +68,9 @@ class _EditTaskPageState extends State<EditTaskPage> {
         _checklistControllers.add(TextEditingController(text: e.text));
       }
     }
+    _checklistFocusNodes.addAll(
+      List.generate(_checklistControllers.length, (_) => FocusNode()),
+    );
     _isRecurringDaily = widget.initialIsRecurringDaily;
     _hasReminder = widget.initialHasReminder;
     _reminderTime = widget.initialReminderTime;
@@ -78,7 +82,29 @@ class _EditTaskPageState extends State<EditTaskPage> {
     for (final c in _checklistControllers) {
       c.dispose();
     }
+    for (final n in _checklistFocusNodes) {
+      n.dispose();
+    }
     super.dispose();
+  }
+
+  void _focusNextChecklistField(int index) {
+    if (index < _checklistControllers.length - 1) {
+      _checklistFocusNodes[index + 1].requestFocus();
+      return;
+    }
+    if (_checklistControllers[index].text.trim().isEmpty) {
+      return;
+    }
+    setState(() {
+      _checklistControllers.add(TextEditingController(text: ''));
+      _checklistFocusNodes.add(FocusNode());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _checklistFocusNodes.last.requestFocus();
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -173,12 +199,14 @@ class _EditTaskPageState extends State<EditTaskPage> {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: _checklistFocusNodes[index],
               decoration: InputDecoration(
                 hintText: 'Checklist item ${index + 1}',
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),
               textInputAction: TextInputAction.next,
+              onEditingComplete: () => _focusNextChecklistField(index),
             ),
           ),
           if (!sortMode)
@@ -189,6 +217,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
                   if (_checklistControllers.length == 1) {
                     _checklistControllers[0].text = '';
                   } else {
+                    _checklistFocusNodes[index].dispose();
+                    _checklistFocusNodes.removeAt(index);
                     _checklistControllers[index].dispose();
                     _checklistControllers.removeAt(index);
                   }
@@ -257,6 +287,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
                   onPressed: () {
                     setState(() {
                       _checklistControllers.add(TextEditingController(text: ''));
+                      _checklistFocusNodes.add(FocusNode());
                     });
                   },
                   icon: const Icon(Icons.add, size: 18),
@@ -275,7 +306,9 @@ class _EditTaskPageState extends State<EditTaskPage> {
                   setState(() {
                     if (newIndex > oldIndex) newIndex--;
                     final c = _checklistControllers.removeAt(oldIndex);
+                    final fn = _checklistFocusNodes.removeAt(oldIndex);
                     _checklistControllers.insert(newIndex, c);
+                    _checklistFocusNodes.insert(newIndex, fn);
                   });
                 },
                 itemBuilder: (context, index) {

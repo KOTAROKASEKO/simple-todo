@@ -14,6 +14,19 @@ service cloud.firestore {
         || (('reminderLastSentAt' in resource.data) && request.resource.data.reminderLastSentAt == resource.data.reminderLastSentAt);
     }
 
+    // User profile / prefs on the parent doc (e.g. journal AI personalization text).
+    match /todo/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['journalPersonalization'])
+        && request.resource.data.journalPersonalization is string
+        && request.resource.da  ta.journalPersonalization.size() <= 10000;
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['journalPersonalization'])
+        && request.resource.data.journalPersonalization is string
+        && request.resource.data.journalPersonalization.size() <= 10000;
+    }
+
     match /todo/{userId}/tasks/{taskId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && noServerReminderFieldsOnCreate();
@@ -50,6 +63,11 @@ service cloud.firestore {
 
     match /dailyCheckSettings/{userId} {
       allow read, write: if isOwner(userId);
+    }
+
+    // Server-only queue for surprise journal AI (Cloud Functions).
+    match /journal_ai_pending/{docId} {
+      allow read, write: if false;
     }
   }
 }

@@ -2,10 +2,19 @@ import * as admin from "firebase-admin";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {VertexAI} from "@google-cloud/vertexai";
 import {sendDueTaskReminders, sendDailyCheckReminders} from "./reminders";
+import {
+  onJournalEntryCreatedQueueAi,
+  deliverRandomJournalAiFeedback,
+} from "./journal_ai_surprise";
 
 admin.initializeApp();
 
-export {sendDueTaskReminders, sendDailyCheckReminders};
+export {
+  sendDueTaskReminders,
+  sendDailyCheckReminders,
+  onJournalEntryCreatedQueueAi,
+  deliverRandomJournalAiFeedback,
+};
 
 /** Sends one test "Check your tasks" FCM to the current user (for debugging). */
 export const sendTestDailyCheckNotification = onCall(
@@ -156,3 +165,4 @@ export const analyzeMistakes = onCall(
     }
   },
 );
+

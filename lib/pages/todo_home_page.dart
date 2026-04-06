@@ -9,6 +9,8 @@ import 'package:home_widget/home_widget.dart';
 import 'package:simpletodo/models/task_model.dart';
 import 'package:simpletodo/notification_service.dart';
 import 'package:hive/hive.dart';
+import 'package:simpletodo/services/app_isar.dart';
+import 'package:simpletodo/services/journal_store.dart';
 import 'package:simpletodo/services/task_store.dart';
 import 'package:simpletodo/web_favicon_badge.dart';
 import 'package:simpletodo/pages/add_journal_entry_page.dart';
@@ -17,11 +19,14 @@ import 'package:simpletodo/pages/add_task_page.dart';
 import 'package:simpletodo/pages/mistake_analysis_page.dart';
 import 'package:simpletodo/pages/view_journal_entry_page.dart';
 import 'package:simpletodo/pages/edit_task_page.dart';
-import 'package:simpletodo/pages/goal_planner_page.dart';
+import 'package:simpletodo/pages/journal_personalization_page.dart';
 import 'package:simpletodo/pages/notification_settings_page.dart';
-import 'package:simpletodo/pages/timer_page.dart';
+import 'package:simpletodo/pages/task_timer_page.dart';
+import 'package:simpletodo/utils/task_duration_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:simpletodo/widgets/liquid_glass_app_bar.dart';
+
+typedef _JournalListRow = ({String id, Map<String, dynamic> data});
 
 class _TaskChecklistItem {
   _TaskChecklistItem({required this.text, required this.isDone});
@@ -42,12 +47,13 @@ class TodoHomePage extends StatefulWidget {
 class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver {
   static const bool _useServerPushReminders = true;
   late final CollectionReference<Map<String, dynamic>> _tasksRef;
-  late final CollectionReference<Map<String, dynamic>> _focusTasksRef;
   late final CollectionReference<Map<String, dynamic>> _mistakesRef;
   late final CollectionReference<Map<String, dynamic>> _mistakeAnalysesRef;
   late final CollectionReference<Map<String, dynamic>> _journalRef;
   TaskStore? _taskStore;
   bool _taskStoreReady = false;
+  JournalStore? _journalStore;
+  bool _journalStoreReady = false;
   Box<String>? _taskOrderBox;
   bool get _useHive => !kIsWeb;
   final ScrollController _dateListController = ScrollController();
@@ -55,18 +61,15 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
   StreamSubscription<Uri?>? _widgetClickSubscription;
   late DateTime _selectedDate;
   late List<DateTime> _sliderDays;
-  String _displayedMonth = '';
   int _bottomTabIndex = 0;
   bool _desktopRecurring = false;
   bool _desktopHasReminder = false;
   TimeOfDay? _desktopReminderTime;
   List<TextEditingController> _desktopChecklistControllers =
       [TextEditingController()];
-  final Map<String, bool> _optimisticTaskDoneByKey = <String, bool>{};
-  final Set<String> _pendingTaskToggleKeys = <String>{};
-  bool _readingAloudBannerVisible = false;
-  bool _readingAloudBannerShownThisSession = false;
-  bool _readingAloudBannerScheduled = false;
+  List<FocusNode> _desktopChecklistFocusNodes = [FocusNode()];
+  /// Serialize checklist toggles per task+day so Firestore updates do not read a stale snapshot.
+  final Map<String, Future<void>> _checklistToggleChain = <String, Future<void>>{};
   final ScrollController _taskListScrollController = ScrollController();
   bool _isDraggingTask = false;
   bool _mistakeSelectionMode = false;
@@ -84,20 +87,10 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _sliderDays = _buildSliderDays();
-    _displayedMonth = _monthNameEnglish(_selectedDate.month);
     _tasksRef = FirebaseFirestore.instance
         .collection('todo')
         .doc(widget.user.uid)
         .collection('tasks')
-        .withConverter<Map<String, dynamic>>(
-          fromFirestore: (snapshot, _) =>
-              snapshot.data() ?? <String, dynamic>{},
-          toFirestore: (value, _) => value,
-        );
-    _focusTasksRef = FirebaseFirestore.instance
-        .collection('todo')
-        .doc(widget.user.uid)
-        .collection('focus_tasks')
         .withConverter<Map<String, dynamic>>(
           fromFirestore: (snapshot, _) =>
               snapshot.data() ?? <String, dynamic>{},
@@ -131,6 +124,10 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           toFirestore: (value, _) => value,
         );
     if (_useHive) {
+      _journalStore = JournalStore(journalRef: _journalRef);
+      unawaited(_journalStore!.init().then((_) {
+        if (mounted) setState(() => _journalStoreReady = true);
+      }));
       _taskStore = TaskStore(userId: widget.user.uid, tasksRef: _tasksRef);
       Future<void> initOrder() async {
         try {
@@ -144,6 +141,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       });
     } else {
       _taskStoreReady = true;
+      _journalStoreReady = true;
     }
     WidgetsBinding.instance.addObserver(this);
     if (_isAndroidWidgetSupported) {
@@ -163,6 +161,12 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     for (final controller in _desktopChecklistControllers) {
       controller.dispose();
     }
+    for (final n in _desktopChecklistFocusNodes) {
+      n.dispose();
+    }
+    _journalStore?.dispose();
+    _journalStore = null;
+    _taskStore?.dispose();
     _taskStore = null;
     _addTaskTitleController.dispose();
     _dateListController.dispose();
@@ -196,7 +200,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     return DateTime(year, month, day);
   }
 
-  String _taskToggleKey(String taskId, DateTime date) {
+  String _checklistToggleKey(String taskId, DateTime date) {
     return '$taskId|${_dayKey(date)}';
   }
 
@@ -212,11 +216,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     Map<String, dynamic> data,
     DateTime date,
   ) {
-    final key = _taskToggleKey(taskId, date);
-    final optimisticValue = _optimisticTaskDoneByKey[key];
-    if (optimisticValue != null) {
-      return optimisticValue;
-    }
     return _isTaskDoneForDate(data, date);
   }
 
@@ -296,7 +295,30 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       for (final controller in _desktopChecklistControllers) {
         controller.dispose();
       }
+      for (final n in _desktopChecklistFocusNodes) {
+        n.dispose();
+      }
       _desktopChecklistControllers = [TextEditingController()];
+      _desktopChecklistFocusNodes = [FocusNode()];
+    });
+  }
+
+  void _focusNextDesktopChecklistField(int index) {
+    if (index < _desktopChecklistControllers.length - 1) {
+      _desktopChecklistFocusNodes[index + 1].requestFocus();
+      return;
+    }
+    if (_desktopChecklistControllers[index].text.trim().isEmpty) {
+      return;
+    }
+    setState(() {
+      _desktopChecklistControllers.add(TextEditingController());
+      _desktopChecklistFocusNodes.add(FocusNode());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _desktopChecklistFocusNodes.last.requestFocus();
+      }
     });
   }
 
@@ -326,6 +348,9 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       'lastResetOn': today,
       'createdAt': createdAt,
     };
+    if (initialIsDone && !isRecurringDaily) {
+      taskData['completedOnDayKey'] = selectedDayKey;
+    }
     final normalizedChecklist = _normalizeChecklistTexts(checklistItems);
     if (normalizedChecklist.isNotEmpty) {
       taskData['checklist'] = normalizedChecklist
@@ -552,30 +577,18 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  String _monthNameEnglish(int month) {
-    const months = <String>[
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return months[month - 1];
-  }
-
   String _shortMonthName(int month) {
     const months = <String>[
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return months[month - 1];
+  }
+
+  /// Short weekday label (Mon … Sun), aligned with English month abbreviations.
+  String _weekdayShortLabel(DateTime date) {
+    const w = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return w[date.weekday - 1];
   }
 
   void _scrollDateSliderToSelected({required bool animated}) {
@@ -601,10 +614,41 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     }
   }
 
+  /// True if the document uses per-day completion (daily / recurring-style).
+  bool _hasRecurringCompletionFields(Map<String, dynamic> data) {
+    final dbd = data['doneByDate'];
+    if (dbd is Map && dbd.isNotEmpty) {
+      return true;
+    }
+    final cbd = data['checklistDoneByDate'];
+    if (cbd is Map && cbd.isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  void _mergeCompletedOnDayKeyForOneTimeUpdate(
+    Map<String, dynamic> updateData,
+    bool markDone,
+    DateTime completionCalendarDay,
+  ) {
+    final k = _dayKey(completionCalendarDay);
+    if (markDone) {
+      updateData['completedOnDayKey'] = k;
+    } else {
+      updateData['completedOnDayKey'] = FieldValue.delete();
+    }
+  }
+
+  /// Whether this task should appear for [_selectedDate]. One-time tasks
+  /// completed on another day stay hidden when browsing this day; if done today,
+  /// [completedOnDayKey] matches and they show at the bottom (strikethrough).
   bool _shouldShowTaskForSelectedDate(Map<String, dynamic> data) {
     final selectedDayKey = _dayKey(_selectedDate);
     String? dateKey = data['dateKey'] as String?;
-    final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+    final isRecurringDaily =
+        ((data['isRecurringDaily'] as bool?) ?? false) ||
+        _hasRecurringCompletionFields(data);
 
     // For non-recurring tasks: show only on the task's date or later (never on earlier days).
     if (!isRecurringDaily) {
@@ -631,8 +675,12 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       if (dateKey == selectedDayKey) {
         return true;
       }
-      final isDone = (data['isDone'] as bool?) ?? false;
-      return !isDone;
+      // Carried forward: show incomplete, or done only if completed on this day.
+      final done = (data['isDone'] as bool?) ?? false;
+      if (!done) {
+        return true;
+      }
+      return (data['completedOnDayKey'] as String?) == selectedDayKey;
     }
 
     if (dateKey == null) {
@@ -642,94 +690,80 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     return dateKey.compareTo(selectedDayKey) <= 0;
   }
 
-  Future<void> _toggleTask(
+  void _toggleTask(
     DocumentSnapshot<Map<String, dynamic>> doc,
     bool value,
-  ) async {
+  ) {
     if (_useHive) {
-      await _toggleTaskById(doc.id, value);
+      unawaited(_toggleTaskById(doc.id, value));
       return;
     }
-    final key = _taskToggleKey(doc.id, _selectedDate);
-    if (_pendingTaskToggleKeys.contains(key)) return;
-    setState(() {
-      _pendingTaskToggleKeys.add(key);
-      _optimisticTaskDoneByKey[key] = value;
-    });
     final data = doc.data() ?? <String, dynamic>{};
     final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
     final checklist = _taskChecklistFromData(data);
-    try {
-      if (!isRecurringDaily) {
-        if (checklist.isEmpty) {
-          await doc.reference.update(<String, dynamic>{'isDone': value});
-        } else {
-          final updatedChecklist = checklist
-              .map((item) => _TaskChecklistItem(text: item.text, isDone: value))
-              .toList();
-          await doc.reference.update(<String, dynamic>{
-            'checklist': _checklistToFirestore(updatedChecklist),
-            'isDone': value,
-          });
-        }
+
+    late final Future<void> writeFuture;
+    if (!isRecurringDaily) {
+      if (checklist.isEmpty) {
+        final u = <String, dynamic>{'isDone': value};
+        _mergeCompletedOnDayKeyForOneTimeUpdate(u, value, _selectedDate);
+        writeFuture = doc.reference.update(u);
       } else {
-        final selectedKey = _dayKey(_selectedDate);
-        final texts = _taskChecklistTextsFromData(data);
-        if (texts.isEmpty) {
-          await doc.reference.set(<String, dynamic>{
-            'doneByDate': <String, dynamic>{selectedKey: value},
-          }, SetOptions(merge: true));
-        } else {
-          final template = texts
-              .map((t) => <String, dynamic>{'text': t, 'isDone': false})
-              .toList();
-          await doc.reference.set(<String, dynamic>{
-            'checklist': template,
-            'doneByDate': <String, dynamic>{selectedKey: value},
-            'checklistDoneByDate': <String, dynamic>{
-              selectedKey: List<bool>.filled(texts.length, value),
-            },
-          }, SetOptions(merge: true));
-        }
+        final updatedChecklist = checklist
+            .map((item) => _TaskChecklistItem(text: item.text, isDone: value))
+            .toList();
+        final u = <String, dynamic>{
+          'checklist': _checklistToFirestore(updatedChecklist),
+          'isDone': value,
+        };
+        _mergeCompletedOnDayKeyForOneTimeUpdate(u, value, _selectedDate);
+        writeFuture = doc.reference.update(u);
       }
-      await _syncTodayWidgetData();
-      if (mounted) {
-        setState(() {
-        _pendingTaskToggleKeys.remove(key);
-        _optimisticTaskDoneByKey.remove(key);
-      });
-      }
-    } on FirebaseException catch (e) {
-      if (mounted) {
-        setState(() {
-          _pendingTaskToggleKeys.remove(key);
-          _optimisticTaskDoneByKey.remove(key);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
-        );
+    } else {
+      final selectedKey = _dayKey(_selectedDate);
+      final texts = _taskChecklistTextsFromData(data);
+      if (texts.isEmpty) {
+        writeFuture = doc.reference.set(<String, dynamic>{
+          'doneByDate': <String, dynamic>{selectedKey: value},
+        }, SetOptions(merge: true));
+      } else {
+        final template = texts
+            .map((t) => <String, dynamic>{'text': t, 'isDone': false})
+            .toList();
+        writeFuture = doc.reference.set(<String, dynamic>{
+          'checklist': template,
+          'doneByDate': <String, dynamic>{selectedKey: value},
+          'checklistDoneByDate': <String, dynamic>{
+            selectedKey: List<bool>.filled(texts.length, value),
+          },
+        }, SetOptions(merge: true));
       }
     }
+
+    unawaited(
+      writeFuture.then((_) {
+        unawaited(_syncTodayWidgetData());
+      }).catchError((Object e) {
+        if (!mounted) {
+          return;
+        }
+        if (e is FirebaseException) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
+          );
+        }
+      }),
+    );
   }
 
   Future<void> _toggleTaskById(String taskId, bool value) async {
     final task = _taskStore!.getTask(taskId);
     if (task == null) return;
 
-    final key = _taskToggleKey(taskId, _selectedDate);
-    if (_pendingTaskToggleKeys.contains(key)) {
-      return;
-    }
-
-    setState(() {
-      _pendingTaskToggleKeys.add(key);
-      _optimisticTaskDoneByKey[key] = value;
-    });
-
     final data = _taskStore!.taskToMap(task);
     final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
     final checklist = _taskChecklistFromData(data);
-    final wasDone = _resolvedTaskDoneForDateById(taskId, data, _selectedDate);
+    final wasDone = _isTaskDoneForDate(data, _selectedDate);
     if (!wasDone && value) {
       _playTaskDoneHaptic();
     }
@@ -769,29 +803,21 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           };
         }
       }
+      if (!isRecurringDaily) {
+        _mergeCompletedOnDayKeyForOneTimeUpdate(
+          updateData,
+          value,
+          _selectedDate,
+        );
+      }
       await _taskStore!.updateTask(taskId, updateData);
-      await _syncTodayWidgetData();
+      unawaited(_syncTodayWidgetData());
+    } catch (e) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _pendingTaskToggleKeys.remove(key);
-        _optimisticTaskDoneByKey.remove(key);
-      });
-    } on FirebaseException catch (e) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _pendingTaskToggleKeys.remove(key);
-        _optimisticTaskDoneByKey.remove(key);
-      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to update task. Reverted: ${e.message ?? e.code}',
-          ),
-        ),
+        SnackBar(content: Text('Failed to update task: $e')),
       );
     }
   }
@@ -801,61 +827,86 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     int index,
     bool value,
   ) async {
-    if (_useHive) {
-      await _toggleChecklistItemById(doc.id, index, value);
-      return;
+    final key = _checklistToggleKey(doc.id, _selectedDate);
+    final prev = _checklistToggleChain[key] ?? Future<void>.value();
+    // Do not stall the queue if a prior toggle failed (e.g. offline).
+    final next = prev.catchError((_) {}).then((_) async {
+      if (_useHive) {
+        await _toggleChecklistItemById(doc.id, index, value);
+      } else {
+        await _toggleChecklistItemFirestore(doc, index, value);
+      }
+    });
+    _checklistToggleChain[key] = next;
+    try {
+      await next;
+    } finally {
+      if (_checklistToggleChain[key] == next) {
+        _checklistToggleChain.remove(key);
+      }
     }
-    final data = doc.data() ?? <String, dynamic>{};
-    final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
-    if (isRecurringDaily) {
-      final texts = _taskChecklistTextsFromData(data);
-      if (index < 0 || index >= texts.length) {
+  }
+
+  Future<void> _toggleChecklistItemFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+    int index,
+    bool value,
+  ) async {
+    try {
+      final fresh = await doc.reference.get();
+      if (!fresh.exists) {
         return;
       }
-      final dayKey = _dayKey(_selectedDate);
-      final bools = List<bool>.from(
-        _recurringChecklistDoneBoolsForDay(data, dayKey, texts.length),
-      );
-      bools[index] = value;
-      final isDone = bools.every((e) => e);
-      final template = texts
-          .map((t) => <String, dynamic>{'text': t, 'isDone': false})
-          .toList();
-      final updateData = <String, dynamic>{
-        'checklist': template,
-        'checklistDoneByDate': <String, dynamic>{dayKey: bools},
-        'doneByDate': <String, dynamic>{dayKey: isDone},
-      };
-      try {
-        await doc.reference.update(flattenFirestoreUpdateData(updateData));
-        await _syncTodayWidgetData();
-      } on FirebaseException catch (e) {
-        if (!mounted) {
+      final data = fresh.data() ?? <String, dynamic>{};
+      final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+      if (isRecurringDaily) {
+        final texts = _taskChecklistTextsFromData(data);
+        if (index < 0 || index >= texts.length) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
+        final dayKey = _dayKey(_selectedDate);
+        final bools = List<bool>.from(
+          _recurringChecklistDoneBoolsForDay(data, dayKey, texts.length),
         );
+        bools[index] = value;
+        final isDone = bools.every((e) => e);
+        final template = texts
+            .map((t) => <String, dynamic>{'text': t, 'isDone': false})
+            .toList();
+        final updateData = <String, dynamic>{
+          'checklist': template,
+          'checklistDoneByDate': <String, dynamic>{dayKey: bools},
+          'doneByDate': <String, dynamic>{dayKey: isDone},
+        };
+        await doc.reference.update(flattenFirestoreUpdateData(updateData));
+        await _syncTodayWidgetData();
+        return;
       }
-      return;
-    }
-    final checklist = _taskChecklistFromData(data);
-    if (index < 0 || index >= checklist.length) return;
-    final updatedChecklist = List<_TaskChecklistItem>.from(checklist);
-    updatedChecklist[index] = _TaskChecklistItem(
-      text: updatedChecklist[index].text,
-      isDone: value,
-    );
-    final isDone = _isChecklistDone(updatedChecklist);
-    final updateData = <String, dynamic>{
-      'checklist': _checklistToFirestore(updatedChecklist),
-      'isDone': isDone,
-    };
-    try {
+      final checklist = _taskChecklistFromData(data);
+      if (index < 0 || index >= checklist.length) {
+        return;
+      }
+      final updatedChecklist = List<_TaskChecklistItem>.from(checklist);
+      updatedChecklist[index] = _TaskChecklistItem(
+        text: updatedChecklist[index].text,
+        isDone: value,
+      );
+      final isDone = _isChecklistDone(updatedChecklist);
+      final updateData = <String, dynamic>{
+        'checklist': _checklistToFirestore(updatedChecklist),
+        'isDone': isDone,
+      };
+      _mergeCompletedOnDayKeyForOneTimeUpdate(
+        updateData,
+        isDone,
+        _selectedDate,
+      );
       await doc.reference.update(flattenFirestoreUpdateData(updateData));
       await _syncTodayWidgetData();
     } on FirebaseException catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
       );
@@ -909,6 +960,11 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         'checklist': _checklistToFirestore(updatedChecklist),
         'isDone': isDone,
       };
+      _mergeCompletedOnDayKeyForOneTimeUpdate(
+        updateData,
+        isDone,
+        _selectedDate,
+      );
     }
 
     try {
@@ -961,7 +1017,10 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                 return true;
               }
               final isDone = (data['isDone'] as bool?) ?? false;
-              return !isDone;
+              if (!isDone) {
+                return true;
+              }
+              return (data['completedOnDayKey'] as String?) == todayKey;
             }
             if (dateKey == null) {
               return true;
@@ -997,6 +1056,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         final data = widgetTasks[i].data();
         final title = (data['title'] as String?) ?? 'Untitled task';
         final isDone = _isTaskDoneForDate(data, DateTime.now());
+        final checklist = _taskChecklistFromDataForDate(data, DateTime.now());
         await HomeWidget.saveWidgetData<String>(
           'today_task_${i}_id',
           widgetTasks[i].id,
@@ -1019,6 +1079,20 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           'today_task_${i}_is_recurring',
           isRecurring ? '1' : '0',
         );
+        await HomeWidget.saveWidgetData<String>(
+          'today_task_${i}_checklist_count',
+          checklist.length.toString(),
+        );
+        for (var j = 0; j < checklist.length; j++) {
+          await HomeWidget.saveWidgetData<String>(
+            'today_task_${i}_checklist_${j}_text',
+            checklist[j].text,
+          );
+          await HomeWidget.saveWidgetData<String>(
+            'today_task_${i}_checklist_${j}_is_done',
+            checklist[j].isDone ? '1' : '0',
+          );
+        }
       }
       await HomeWidget.saveWidgetData<String>(
         'today_updated_at',
@@ -1063,18 +1137,23 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
             (taskData['isRecurringDaily'] as bool?) ?? false;
         final checklist = _taskChecklistFromData(taskData);
         if (!isRecurringDaily) {
+          final today = DateTime.now();
           if (checklist.isEmpty) {
-            await taskRef.update(<String, dynamic>{'isDone': done});
+            final u = <String, dynamic>{'isDone': done};
+            _mergeCompletedOnDayKeyForOneTimeUpdate(u, done, today);
+            await taskRef.update(u);
           } else {
             final updatedChecklist = checklist
                 .map(
                   (item) => _TaskChecklistItem(text: item.text, isDone: done),
                 )
                 .toList();
-            await taskRef.update(<String, dynamic>{
+            final u = <String, dynamic>{
               'checklist': _checklistToFirestore(updatedChecklist),
               'isDone': done,
-            });
+            };
+            _mergeCompletedOnDayKeyForOneTimeUpdate(u, done, today);
+            await taskRef.update(u);
           }
         } else {
           final todayKey = _dayKey(DateTime.now());
@@ -1109,7 +1188,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _showTaskDetailSheetById(String taskId, HiveTask task) async {
+  Future<void> _showTaskDetailSheetById(String taskId, LocalTask task) async {
     final data = _taskStore!.taskToMap(task);
     await _showTaskDetailSheetWithData(taskId, data);
   }
@@ -1281,6 +1360,14 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                             FieldValue.delete();
                                         updateData['reminderPending'] = false;
                                       }
+                                      if (!isRecurringDaily) {
+                                        final nd =
+                                            updateData['isDone'] as bool?;
+                                        if (nd == false) {
+                                          updateData['completedOnDayKey'] =
+                                              FieldValue.delete();
+                                        }
+                                      }
                                       if (firestoreDoc != null) {
                                         await firestoreDoc.reference
                                             .update(updateData);
@@ -1307,9 +1394,53 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        initialTitle,
-                        style: Theme.of(context).textTheme.titleMedium,
+                      Builder(
+                        builder: (sheetContext) {
+                          final hasChecklist = displayedChecklist.isNotEmpty;
+                          final showTimer = hasChecklist ||
+                              taskTitleSuggestsDuration(initialTitle);
+                          final parsedMin =
+                              parseMinutesFromTaskTitle(initialTitle);
+                          final effectiveMinutes =
+                              (parsedMin ?? 25).clamp(1, 24 * 60);
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  initialTitle,
+                                  style:
+                                      Theme.of(context).textTheme.titleMedium,
+                                ),
+                              ),
+                              if (showTimer)
+                                IconButton(
+                                  tooltip: 'Timer',
+                                  icon: Icon(
+                                    Icons.timer_outlined,
+                                    color: Colors.indigo.shade700,
+                                  ),
+                                  onPressed: () {
+                                    final nav = Navigator.of(sheetContext);
+                                    nav.pop();
+                                    nav.push<void>(
+                                      MaterialPageRoute<void>(
+                                        builder: (context) => TaskTimerPage(
+                                          taskTitle: initialTitle,
+                                          initialDuration: Duration(
+                                            minutes: effectiveMinutes.clamp(
+                                              1,
+                                              24 * 60,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                            ],
+                          );
+                        },
                       ),
                       if (displayedChecklist.isNotEmpty) ...[
                           const SizedBox(height: 10),
@@ -1395,11 +1526,11 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                       SizedBox(
                           width: double.infinity,
                           child: FilledButton(
-                            onPressed: () async {
+                            onPressed: () {
                               if (firestoreDoc != null) {
-                                await _toggleTask(firestoreDoc, !initialIsDone);
+                                _toggleTask(firestoreDoc, !initialIsDone);
                               } else {
-                                await _toggleTaskById(taskId, !initialIsDone);
+                                unawaited(_toggleTaskById(taskId, !initialIsDone));
                               }
                               if (context.mounted) {
                                 Navigator.of(context).pop();
@@ -1498,6 +1629,68 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           },
         );
       },
+    );
+  }
+
+  /// Single task row: no card chrome; optional hairline below (list style).
+  Widget _taskListRow({
+    required Widget tile,
+    required bool isDone,
+    required bool showBottomDivider,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: isDone
+              ? const Color(0xFFF3F4F7)
+              : Colors.transparent,
+          child: tile,
+        ),
+        if (showBottomDivider)
+          const Divider(
+            height: 1,
+            thickness: 1,
+            color: Color(0xFFE4E7EE),
+          ),
+      ],
+    );
+  }
+
+  Widget _doneTasksSectionDivider() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 10, 0, 14),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Divider(
+              thickness: 2,
+              height: 2,
+              color: Color(0xFFB0B8C4),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(
+              'Done',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ),
+          const Expanded(
+            child: Divider(
+              thickness: 2,
+              height: 2,
+              color: Color(0xFFB0B8C4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1645,24 +1838,15 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
             final doneChecklistCount =
                 checklist.where((item) => item.isDone).length;
             final isDone = _resolvedTaskDoneForDate(doc, _selectedDate);
-            final isPendingToggle =
-                _pendingTaskToggleKeys.contains(_taskToggleKey(doc.id, _selectedDate));
             final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
-
-            Widget tileContent(Widget child) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: isDone ? const Color(0xFFFBFBFC) : Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE7EAF0)),
-                  ),
-                  child: child,
-                );
+            final prevDone = index > 0 &&
+                _resolvedTaskDoneForDate(docs[index - 1], _selectedDate);
+            final showDoneSectionDivider = isDone && index > 0 && !prevDone;
 
             final tile = ListTile(
               onTap: () => _showTaskDetailSheet(doc),
-              contentPadding: const EdgeInsets.fromLTRB(8, 8, 14, 8),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               leading: Checkbox(
                 value: isDone,
                 side: const BorderSide(color: Color(0xFFBBC2CF), width: 1.2),
@@ -1670,15 +1854,16 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   borderRadius: BorderRadius.circular(6),
                 ),
                 activeColor: const Color(0xFF111111),
-                onChanged: !isPendingToggle
-                    ? (value) => _toggleTask(doc, value ?? false)
-                    : null,
+                onChanged: (value) => _toggleTask(doc, value ?? false),
               ),
               title: Text(
                 title,
                 style: TextStyle(
+                  fontWeight: FontWeight.w600,
                   decoration: isDone ? TextDecoration.lineThrough : null,
-                  color: isDone ? const Color(0xFF8A90A0) : null,
+                  color: isDone
+                      ? const Color(0xFF8A90A0)
+                      : const Color(0xFF17181C),
                 ),
               ),
               subtitle: Row(
@@ -1720,61 +1905,74 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
               ),
             );
 
-            return LongPressDraggable<String>(
-              key: ValueKey(doc.id),
-              data: doc.id,
-              onDragStarted: () => setState(() => _isDraggingTask = true),
-              onDragEnd: (_) => setState(() => _isDraggingTask = false),
-              onDraggableCanceled: (_, __) => setState(() => _isDraggingTask = false),
-              feedback: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(18),
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width - 28,
-                  child: tileContent(tile),
-                ),
-              ),
-              childWhenDragging: tileContent(Opacity(opacity: 0.4, child: tile)),
-              child: DragTarget<String>(
-                onAcceptWithDetails: (details) {
-                  final oldIndex = docs.indexWhere((d) => d.id == details.data);
-                  if (oldIndex < 0 || oldIndex == index) return;
-                  applyReorder(oldIndex, index);
-                },
-                builder: (context, candidateData, rejectedData) {
-                  final showDropSlot = candidateData.isNotEmpty && !candidateData.contains(doc.id);
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (showDropSlot)
-                        Container(
-                          height: 56,
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF111111).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: const Color(0xFF111111).withOpacity(0.25),
-                              width: 2,
-                              strokeAlign: BorderSide.strokeAlignInside,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              'Drop here',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF111111).withOpacity(0.5),
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showDoneSectionDivider) _doneTasksSectionDivider(),
+                LongPressDraggable<String>(
+                  key: ValueKey(doc.id),
+                  data: doc.id,
+                  onDragStarted: () => setState(() => _isDraggingTask = true),
+                  onDragEnd: (_) => setState(() => _isDraggingTask = false),
+                  onDraggableCanceled: (_, __) =>
+                      setState(() => _isDraggingTask = false),
+                  feedback: Material(
+                    elevation: 6,
+                    color: Colors.white,
+                    child: SizedBox(
+                      width: MediaQuery.of(context).size.width - 24,
+                      child: tile,
+                    ),
+                  ),
+                  childWhenDragging: Opacity(opacity: 0.35, child: tile),
+                  child: DragTarget<String>(
+                    onAcceptWithDetails: (details) {
+                      final oldIndex =
+                          docs.indexWhere((d) => d.id == details.data);
+                      if (oldIndex < 0 || oldIndex == index) return;
+                      applyReorder(oldIndex, index);
+                    },
+                    builder: (context, candidateData, rejectedData) {
+                      final showDropSlot = candidateData.isNotEmpty &&
+                          !candidateData.contains(doc.id);
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showDropSlot)
+                            Container(
+                              height: 36,
+                              margin: const EdgeInsets.only(bottom: 2),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF111111)
+                                    .withOpacity(0.06),
+                                border: Border.all(
+                                  color: const Color(0xFF111111)
+                                      .withOpacity(0.2),
+                                ),
+                              ),
+                              child: Text(
+                                'Drop here',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF111111)
+                                      .withOpacity(0.45),
+                                ),
                               ),
                             ),
+                          _taskListRow(
+                            tile: tile,
+                            isDone: isDone,
+                            showBottomDivider: index < docs.length - 1,
                           ),
-                        ),
-                      tileContent(tile),
-                    ],
-                  );
-                },
-              ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             );
           },
         ),
@@ -1791,9 +1989,9 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       return const Center(child: CircularProgressIndicator());
     }
 
-    return ValueListenableBuilder<Box<HiveTask>>(
-      valueListenable: _taskStore!.listenable,
-      builder: (context, box, _) {
+    return StreamBuilder<void>(
+      stream: _taskStore!.changes,
+      builder: (context, _) {
         final allTasks = _taskStore!.getAllTasks();
         final filtered = allTasks
             .where((t) => _shouldShowTaskForSelectedDate(_taskStore!.taskToMap(t)))
@@ -1863,7 +2061,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
 
         void applyReorder(int oldIndex, int newIndex) {
           if (oldIndex == newIndex) return;
-          final reordered = List<HiveTask>.from(tasks);
+          final reordered = List<LocalTask>.from(tasks);
           final moved = reordered.removeAt(oldIndex);
           reordered.insert(newIndex, moved);
           final newOrderIds =
@@ -1908,25 +2106,20 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
               data,
               _selectedDate,
             );
-            final isPendingToggle =
-                _pendingTaskToggleKeys.contains(_taskToggleKey(taskId, _selectedDate));
             final isRecurringDaily =
                 (data['isRecurringDaily'] as bool?) ?? false;
-
-            Widget tileContent(Widget child) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: isDone ? const Color(0xFFFBFBFC) : Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE7EAF0)),
-                  ),
-                  child: child,
+            final prevDone = index > 0 &&
+                _resolvedTaskDoneForDateById(
+                  _taskStore!.getTaskId(tasks[index - 1]),
+                  _taskStore!.taskToMap(tasks[index - 1]),
+                  _selectedDate,
                 );
+            final showDoneSectionDivider = isDone && index > 0 && !prevDone;
 
             final tile = ListTile(
               onTap: () => _showTaskDetailSheetById(taskId, task),
-              contentPadding: const EdgeInsets.fromLTRB(8, 8, 14, 8),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               leading: Checkbox(
                 value: isDone,
                 side: const BorderSide(color: Color(0xFFBBC2CF), width: 1.2),
@@ -1934,9 +2127,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   borderRadius: BorderRadius.circular(6),
                 ),
                 activeColor: const Color(0xFF111111),
-                onChanged: !isPendingToggle
-                    ? (value) => _toggleTaskById(taskId, value ?? false)
-                    : null,
+                onChanged: (value) =>
+                    unawaited(_toggleTaskById(taskId, value ?? false)),
               ),
               title: Text(
                 title,
@@ -1993,62 +2185,75 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
               ),
             );
 
-            return LongPressDraggable<String>(
-              key: ValueKey(taskId),
-              data: taskId,
-              onDragStarted: () => setState(() => _isDraggingTask = true),
-              onDragEnd: (_) => setState(() => _isDraggingTask = false),
-              onDraggableCanceled: (_, __) => setState(() => _isDraggingTask = false),
-              feedback: Material(
-                elevation: 4,
-                borderRadius: BorderRadius.circular(18),
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width - 28,
-                  child: tileContent(tile),
-                ),
-              ),
-              childWhenDragging: tileContent(Opacity(opacity: 0.4, child: tile)),
-              child: DragTarget<String>(
-                onAcceptWithDetails: (details) {
-                  final oldIndex =
-                      tasks.indexWhere((t) => _taskStore!.getTaskId(t) == details.data);
-                  if (oldIndex < 0 || oldIndex == index) return;
-                  applyReorder(oldIndex, index);
-                },
-                builder: (context, candidateData, rejectedData) {
-                  final showDropSlot = candidateData.isNotEmpty && !candidateData.contains(taskId);
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (showDropSlot)
-                        Container(
-                          height: 56,
-                          margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF111111).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: const Color(0xFF111111).withOpacity(0.25),
-                              width: 2,
-                              strokeAlign: BorderSide.strokeAlignInside,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              'Drop here',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF111111).withOpacity(0.5),
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showDoneSectionDivider) _doneTasksSectionDivider(),
+                LongPressDraggable<String>(
+                  key: ValueKey(taskId),
+                  data: taskId,
+                  onDragStarted: () => setState(() => _isDraggingTask = true),
+                  onDragEnd: (_) => setState(() => _isDraggingTask = false),
+                  onDraggableCanceled: (_, __) =>
+                      setState(() => _isDraggingTask = false),
+                  feedback: Material(
+                    elevation: 6,
+                    color: Colors.white,
+                    child: SizedBox(
+                      width: MediaQuery.of(context).size.width - 24,
+                      child: tile,
+                    ),
+                  ),
+                  childWhenDragging: Opacity(opacity: 0.35, child: tile),
+                  child: DragTarget<String>(
+                    onAcceptWithDetails: (details) {
+                      final oldIndex = tasks.indexWhere(
+                        (t) => _taskStore!.getTaskId(t) == details.data,
+                      );
+                      if (oldIndex < 0 || oldIndex == index) return;
+                      applyReorder(oldIndex, index);
+                    },
+                    builder: (context, candidateData, rejectedData) {
+                      final showDropSlot = candidateData.isNotEmpty &&
+                          !candidateData.contains(taskId);
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (showDropSlot)
+                            Container(
+                              height: 36,
+                              margin: const EdgeInsets.only(bottom: 2),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF111111)
+                                    .withOpacity(0.06),
+                                border: Border.all(
+                                  color: const Color(0xFF111111)
+                                      .withOpacity(0.2),
+                                ),
+                              ),
+                              child: Text(
+                                'Drop here',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF111111)
+                                      .withOpacity(0.45),
+                                ),
                               ),
                             ),
+                          _taskListRow(
+                            tile: tile,
+                            isDone: isDone,
+                            showBottomDivider: index < tasks.length - 1,
                           ),
-                        ),
-                      tileContent(tile),
-                    ],
-                  );
-                },
-              ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             );
           },
         ),
@@ -2102,6 +2307,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                     _desktopChecklistControllers.add(
                       TextEditingController(),
                     );
+                    _desktopChecklistFocusNodes.add(FocusNode());
                   });
                 },
                 icon: const Icon(Icons.add, size: 18),
@@ -2119,17 +2325,10 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   Expanded(
                     child: TextField(
                       controller: controller,
+                      focusNode: _desktopChecklistFocusNodes[index],
                       textInputAction: TextInputAction.next,
-                      onSubmitted: (_) {
-                        if (controller.text.trim().isEmpty) {
-                          return;
-                        }
-                        setState(() {
-                          _desktopChecklistControllers.add(
-                            TextEditingController(),
-                          );
-                        });
-                      },
+                      onEditingComplete: () =>
+                          _focusNextDesktopChecklistField(index),
                       decoration: InputDecoration(
                         hintText: 'Checklist item ${index + 1}',
                       ),
@@ -2142,6 +2341,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                         if (_desktopChecklistControllers.length == 1) {
                           _desktopChecklistControllers.first.clear();
                         } else {
+                          _desktopChecklistFocusNodes[index].dispose();
+                          _desktopChecklistFocusNodes.removeAt(index);
                           final removed =
                               _desktopChecklistControllers.removeAt(index);
                           removed.dispose();
@@ -2265,13 +2466,13 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           final isFirstOfMonth = day.day == 1 && day.month != now.month;
 
           return Tooltip(
-            message: '${_shortMonthName(day.month)} ${day.day}',
+            message:
+                '${_weekdayShortLabel(day)}, ${_shortMonthName(day.month)} ${day.day}',
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 setState(() {
                   _selectedDate = day;
-                  _displayedMonth = _monthNameEnglish(day.month);
                 });
                 _scrollDateSliderToSelected(animated: true);
               },
@@ -2281,14 +2482,18 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   duration: const Duration(milliseconds: 160),
                   width: _dateItemWidth,
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF111111) : Colors.white,
+                    color: isSelected
+                        ? const Color(0xFF111111)
+                        : isToday
+                            ? const Color(0xFFEFF6FF)
+                            : Colors.white,
                     border: Border.all(
                       color: isSelected
                           ? const Color(0xFF111111)
                           : isToday
-                              ? const Color(0xFF8A93A8)
+                              ? const Color(0xFF4C8AE8)
                               : const Color(0xFFE7EAF0),
-                      width: isToday && !isSelected ? 1.2 : 1.0,
+                      width: isToday && !isSelected ? 2.0 : 1.0,
                     ),
                     borderRadius: BorderRadius.circular(18),
                   ),
@@ -2304,18 +2509,33 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                             fontWeight: FontWeight.w600,
                             color: isSelected
                                 ? Colors.white70
-                                : const Color(0xFF8A90A0),
+                                : isToday
+                                    ? const Color(0xFF6B8DB8)
+                                    : const Color(0xFF8A90A0),
                           ),
                         ),
                       Text(
+                        _weekdayShortLabel(day),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                          color: isSelected
+                              ? Colors.white70
+                              : isToday
+                                  ? const Color(0xFF4A6FA8)
+                                  : const Color(0xFF9AA3B2),
+                        ),
+                      ),
+                      Text(
                         '${day.day}',
                         style: TextStyle(
-                          fontSize: isFirstOfMonth ? 16 : 18,
+                          fontSize: isFirstOfMonth ? 15 : 17,
                           fontWeight: FontWeight.w600,
                           color: isSelected
                               ? Colors.white
                               : isToday
-                                  ? const Color(0xFF17181C)
+                                  ? const Color(0xFF153A62)
                                   : const Color(0xFF6F7685),
                         ),
                       ),
@@ -2396,6 +2616,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
 
   Future<void> _logoutAndClearCache() async {
     if (!kIsWeb) {
+      await clearAppIsarOnLogout();
       try {
         if (Hive.isBoxOpen('tasks')) {
           await Hive.box<dynamic>('tasks').close();
@@ -2442,6 +2663,39 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   MaterialPageRoute<void>(
                     builder: (context) => const NotificationSettingsPage(),
                   ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_note_outlined),
+              title: const Text('Journal AI notes'),
+              subtitle: const Text('パーソナライズ用のメモ'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (context) => const JournalPersonalizationPage(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: const Text('About us'),
+              onTap: () {
+                Navigator.of(context).pop();
+                showAboutDialog(
+                  context: context,
+                  applicationName: 'Simple Todo',
+                  applicationVersion: '1.0.1+3',
+                  applicationLegalese: '© ${DateTime.now().year}',
+                  children: const [
+                    SizedBox(height: 16),
+                    Text(
+                      'Plan tasks, reflect on mistakes, and keep a journal — '
+                      'in one place.',
+                    ),
+                  ],
                 );
               },
             ),
@@ -2740,6 +2994,25 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
   }
 
   Widget _buildJournalTabBody() {
+    if (_useHive) {
+      if (!_journalStoreReady || _journalStore == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return StreamBuilder<void>(
+        stream: _journalStore!.changes,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          final entries = _journalStore!.getAllJournalEntries();
+          final rows = <_JournalListRow>[
+            for (final e in entries) (id: e.id, data: e.toUiMap()),
+          ];
+          return _buildJournalListFromRows(context, rows);
+        },
+      );
+    }
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _journalRef.orderBy('createdAt', descending: true).snapshots(),
       builder: (context, snapshot) {
@@ -2750,417 +3023,404 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           return const Center(child: CircularProgressIndicator());
         }
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.edit_note_rounded,
-                      size: 56,
-                      color: Colors.grey.shade400,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'No entries yet',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: const Color(0xFF5F6778),
-                          fontWeight: FontWeight.w600,
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Tap + to write your first journal entry.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF8A90A0),
-                        ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        final filteredDocs = _journalCategoryFilter == null
-            ? docs
-            : docs
-                .where((d) =>
-                    ((d.data()['category'] as String?) ?? 'diary')
-                        .toLowerCase() ==
-                    _journalCategoryFilter)
-                .toList();
-
-        double orderForDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
-          final data = d.data();
-          final order = data['order'];
-          if (order is num) return order.toDouble();
-          final createdAt = data['createdAt'] as Timestamp?;
-          return (createdAt?.millisecondsSinceEpoch ?? 0).toDouble();
-        }
-
-        filteredDocs.sort((a, b) {
-          final oA = orderForDoc(a);
-          final oB = orderForDoc(b);
-          return oB.compareTo(oA);
-        });
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: Row(
-                children: [
-                  _JournalCategoryFilterChip(
-                    icon: Icons.view_list,
-                    isSelected: _journalCategoryFilter == null,
-                    onTap: () =>
-                        setState(() => _journalCategoryFilter = null),
-                  ),
-                  const SizedBox(width: 8),
-                  _JournalCategoryFilterChip(
-                    icon: Icons.book_outlined,
-                    isSelected: _journalCategoryFilter == 'diary',
-                    onTap: () =>
-                        setState(() => _journalCategoryFilter = 'diary'),
-                  ),
-                  const SizedBox(width: 8),
-                  _JournalCategoryFilterChip(
-                    icon: Icons.work_outline,
-                    isSelected: _journalCategoryFilter == 'work',
-                    onTap: () =>
-                        setState(() => _journalCategoryFilter = 'work'),
-                  ),
-                  const SizedBox(width: 8),
-                  _JournalCategoryFilterChip(
-                    icon: Icons.favorite_border,
-                    isSelected: _journalCategoryFilter == 'life',
-                    onTap: () =>
-                        setState(() => _journalCategoryFilter = 'life'),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      _journalCategoryFilter == null
-                          ? 'All'
-                          : _journalCategoryFilter == 'diary'
-                              ? 'Diary'
-                              : _journalCategoryFilter == 'work'
-                                  ? 'Work'
-                                  : 'Life',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: filteredDocs.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          _journalCategoryFilter == null
-                              ? 'No entries yet'
-                              : 'No ${_journalCategoryFilter == 'diary' ? 'Diary' : _journalCategoryFilter == 'work' ? 'Work' : 'Life'} entries',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: Colors.grey.shade600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
-                  : ReorderableListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                buildDefaultDragHandles: false,
-                onReorder: (oldIndex, newIndex) {
-                  if (newIndex > oldIndex) newIndex--;
-                  _reorderJournalEntry(filteredDocs, oldIndex, newIndex);
-                },
-                itemCount: filteredDocs.length,
-                itemBuilder: (context, index) {
-                  final doc = filteredDocs[index];
-                  final data = doc.data();
-                  final content = data['content'] as String? ?? '';
-                  final category =
-                      (data['category'] as String?)?.toLowerCase() ?? 'diary';
-                  final createdAt = data['createdAt'] as Timestamp?;
-                  final dateStr = createdAt != null
-                      ? _formatJournalDate(createdAt.toDate())
-                      : '';
-                  final preview = content.length > 120
-                      ? '${content.substring(0, 120).trim()}...'
-                      : content;
-                  final categoryIcon = category == 'work'
-                      ? Icons.work_outline
-                      : category == 'life'
-                          ? Icons.favorite_border
-                          : Icons.book_outlined;
-                  final categoryBadge = Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      categoryIcon,
-                      size: 18,
-                      color: Colors.grey.shade700,
-                    ),
-                  );
-                  Widget buildCardContent({Widget? badgeSlot}) => Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (context) {
-                              final imagePathsRaw = data['imagePaths'];
-                              final List<String>? imagePaths = imagePathsRaw is List
-                                  ? (imagePathsRaw)
-                                      .map((e) => e?.toString() ?? '')
-                                      .where((s) => s.isNotEmpty)
-                                      .toList()
-                                  : null;
-                              final String? legacyPath = data['imagePath'] as String?;
-                              final List<String> paths = imagePaths != null && imagePaths.isNotEmpty
-                                  ? imagePaths
-                                  : (legacyPath != null && legacyPath.isNotEmpty
-                                      ? [legacyPath]
-                                      : const []);
-                              return ViewJournalEntryPage(
-                                content: content,
-                                dateLabel:
-                                    dateStr.isEmpty ? 'Journal entry' : dateStr,
-                                imagePaths: paths.isEmpty ? null : paths,
-                                onDelete: () => _journalRef.doc(doc.id).delete(),
-                              );
-                            },
-                            ),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 12,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  if (dateStr.isNotEmpty)
-                                    Expanded(
-                                      child: Text(
-                                        dateStr,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.grey.shade500,
-                                        ),
-                                      ),
-                                    ),
-                                  ?badgeSlot,
-                                ],
-                              ),
-                              if (dateStr.isNotEmpty) const SizedBox(height: 8),
-                              Text(
-                                preview.isEmpty ? 'No content' : preview,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  height: 1.45,
-                                  color: Colors.grey.shade800,
-                                ),
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                  void showCategoryMenu() {
-                    showModalBottomSheet<void>(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => SafeArea(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(20)),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 8, horizontal: 16),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Text(
-                                  'Change category',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                              ),
-                              _categorySheetOption(
-                                context,
-                                'Diary',
-                                'diary',
-                                doc.id,
-                              ),
-                              _categorySheetOption(
-                                context,
-                                'Work',
-                                'work',
-                                doc.id,
-                              ),
-                              _categorySheetOption(
-                                context,
-                                'Life',
-                                'life',
-                                doc.id,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-
-                  return KeyedSubtree(
-                    key: ValueKey(doc.id),
-                    child: ReorderableDelayedDragStartListener(
-                      index: index,
-                      child: buildCardContent(
-                        badgeSlot: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: showCategoryMenu,
-                            borderRadius: BorderRadius.circular(8),
-                            child: categoryBadge,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        );
+        final rows = <_JournalListRow>[
+          for (final d in docs) (id: d.id, data: d.data()),
+        ];
+        return _buildJournalListFromRows(context, rows);
       },
     );
   }
 
-  void _scheduleReadingAloudBannerIfNeeded() {
-    if (_bottomTabIndex != 0 ||
-        _readingAloudBannerShownThisSession ||
-        _readingAloudBannerScheduled) {
-      return;
+  Widget _buildJournalListFromRows(
+    BuildContext context,
+    List<_JournalListRow> rows,
+  ) {
+    double orderForData(Map<String, dynamic> data) {
+      final order = data['order'];
+      if (order is num) return order.toDouble();
+      final createdAt = data['createdAt'];
+      if (createdAt is Timestamp) {
+        return createdAt.millisecondsSinceEpoch.toDouble();
+      }
+      return 0;
     }
-    setState(() => _readingAloudBannerScheduled = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (_readingAloudBannerShownThisSession) return;
-      setState(() {
-        _readingAloudBannerShownThisSession = true;
-        _readingAloudBannerVisible = true;
-      });
-      HapticFeedback.heavyImpact();
-      Future.delayed(const Duration(seconds: 4), () {
-        if (mounted) setState(() => _readingAloudBannerVisible = false);
-      });
-    });
-  }
 
-  Widget _buildReadingAloudBanner() {
-    _scheduleReadingAloudBannerIfNeeded();
-    return AnimatedOpacity(
-      opacity: _readingAloudBannerVisible ? 1 : 0,
-      duration: const Duration(milliseconds: 300),
-      child: IgnorePointer(
-        ignoring: !_readingAloudBannerVisible,
-        child: SafeArea(
-          bottom: false,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.red.shade700,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                'Reading aloud makes you more aware of the tasks!!',
-                style: const TextStyle(
+    if (rows.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
                   color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
+                child: Icon(
+                  Icons.edit_note_rounded,
+                  size: 56,
+                  color: Colors.grey.shade400,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'No entries yet',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: const Color(0xFF5F6778),
+                      fontWeight: FontWeight.w600,
+                    ),
                 textAlign: TextAlign.center,
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                'Tap + to write your first journal entry.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: const Color(0xFF8A90A0),
+                    ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         ),
-      ),
+      );
+    }
+
+    final filteredRows = _journalCategoryFilter == null
+        ? rows
+        : rows
+            .where((r) =>
+                ((r.data['category'] as String?) ?? 'diary')
+                    .toLowerCase() ==
+                _journalCategoryFilter)
+            .toList();
+
+    final sorted = List<_JournalListRow>.from(filteredRows);
+    sorted.sort(
+      (a, b) => orderForData(b.data).compareTo(orderForData(a.data)),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              _JournalCategoryFilterChip(
+                icon: Icons.view_list,
+                isSelected: _journalCategoryFilter == null,
+                onTap: () => setState(() => _journalCategoryFilter = null),
+              ),
+              const SizedBox(width: 8),
+              _JournalCategoryFilterChip(
+                icon: Icons.book_outlined,
+                isSelected: _journalCategoryFilter == 'diary',
+                onTap: () =>
+                    setState(() => _journalCategoryFilter = 'diary'),
+              ),
+              const SizedBox(width: 8),
+              _JournalCategoryFilterChip(
+                icon: Icons.work_outline,
+                isSelected: _journalCategoryFilter == 'work',
+                onTap: () =>
+                    setState(() => _journalCategoryFilter = 'work'),
+              ),
+              const SizedBox(width: 8),
+              _JournalCategoryFilterChip(
+                icon: Icons.favorite_border,
+                isSelected: _journalCategoryFilter == 'life',
+                onTap: () =>
+                    setState(() => _journalCategoryFilter = 'life'),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  _journalCategoryFilter == null
+                      ? 'All'
+                      : _journalCategoryFilter == 'diary'
+                          ? 'Diary'
+                          : _journalCategoryFilter == 'work'
+                              ? 'Work'
+                              : 'Life',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: sorted.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _journalCategoryFilter == null
+                          ? 'No entries yet'
+                          : 'No ${_journalCategoryFilter == 'diary' ? 'Diary' : _journalCategoryFilter == 'work' ? 'Work' : 'Life'} entries',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey.shade600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ReorderableListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  buildDefaultDragHandles: false,
+                  onReorder: (oldIndex, newIndex) {
+                    if (newIndex > oldIndex) newIndex--;
+                    _reorderJournalEntry(sorted, oldIndex, newIndex);
+                  },
+                  itemCount: sorted.length,
+                  itemBuilder: (context, index) {
+                    final row = sorted[index];
+                    final data = row.data;
+                    final entryId = row.id;
+                    final content = data['content'] as String? ?? '';
+                    final category =
+                        (data['category'] as String?)?.toLowerCase() ??
+                            'diary';
+                    final createdAt = data['createdAt'] as Timestamp?;
+                    final dateStr = createdAt != null
+                        ? _formatJournalDate(createdAt.toDate())
+                        : '';
+                    final preview = content.length > 120
+                        ? '${content.substring(0, 120).trim()}...'
+                        : content;
+                    final categoryIcon = category == 'work'
+                        ? Icons.work_outline
+                        : category == 'life'
+                            ? Icons.favorite_border
+                            : Icons.book_outlined;
+                    final categoryBadge = Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        categoryIcon,
+                        size: 18,
+                        color: Colors.grey.shade700,
+                      ),
+                    );
+                    Widget buildCardContent({Widget? badgeSlot}) => Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.of(context).push<void>(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) {
+                                      final imagePathsRaw =
+                                          data['imagePaths'];
+                                      final List<String>? imagePaths =
+                                          imagePathsRaw is List
+                                              ? (imagePathsRaw)
+                                                  .map((e) =>
+                                                      e?.toString() ?? '')
+                                                  .where((s) =>
+                                                      s.isNotEmpty)
+                                                  .toList()
+                                              : null;
+                                      final String? legacyPath =
+                                          data['imagePath'] as String?;
+                                      final List<String> paths = imagePaths !=
+                                                  null &&
+                                              imagePaths.isNotEmpty
+                                          ? imagePaths
+                                          : (legacyPath != null &&
+                                                  legacyPath.isNotEmpty
+                                              ? [legacyPath]
+                                              : const []);
+                                      final aiRaw = data['aiReflection'];
+                                      final Map<String, dynamic>? initialAi =
+                                          aiRaw is Map<String, dynamic>
+                                              ? aiRaw
+                                              : (aiRaw is Map
+                                                  ? Map<String, dynamic>.from(
+                                                      aiRaw,
+                                                    )
+                                                  : null);
+                                      return ViewJournalEntryPage(
+                                        content: content,
+                                        dateLabel: dateStr.isEmpty
+                                            ? 'Journal entry'
+                                            : dateStr,
+                                        imagePaths: paths.isEmpty
+                                            ? null
+                                            : paths,
+                                        initialAiReflection: initialAi,
+                                        onDelete: () async {
+                                          if (_useHive &&
+                                              _journalStore != null) {
+                                            await _journalStore!
+                                                .deleteJournal(entryId);
+                                          } else {
+                                            await _journalRef
+                                                .doc(entryId)
+                                                .delete();
+                                          }
+                                        },
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        if (dateStr.isNotEmpty)
+                                          Expanded(
+                                            child: Text(
+                                              dateStr,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.grey.shade500,
+                                              ),
+                                            ),
+                                          ),
+                                        if (badgeSlot != null) badgeSlot,
+                                      ],
+                                    ),
+                                    if (dateStr.isNotEmpty)
+                                      const SizedBox(height: 8),
+                                    Text(
+                                      preview.isEmpty
+                                          ? 'No content'
+                                          : preview,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        height: 1.45,
+                                        color: Colors.grey.shade800,
+                                      ),
+                                      maxLines: 4,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                    void showCategoryMenu() {
+                      showModalBottomSheet<void>(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => SafeArea(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(20)),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 8, horizontal: 16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    'Change category',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                ),
+                                _categorySheetOption(
+                                  context,
+                                  'Diary',
+                                  'diary',
+                                  entryId,
+                                ),
+                                _categorySheetOption(
+                                  context,
+                                  'Work',
+                                  'work',
+                                  entryId,
+                                ),
+                                _categorySheetOption(
+                                  context,
+                                  'Life',
+                                  'life',
+                                  entryId,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return KeyedSubtree(
+                      key: ValueKey(entryId),
+                      child: ReorderableDelayedDragStartListener(
+                        index: index,
+                        child: buildCardContent(
+                          badgeSlot: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: showCategoryMenu,
+                              borderRadius: BorderRadius.circular(8),
+                              child: categoryBadge,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
   Future<void> _reorderJournalEntry(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> sortedDocs,
+    List<_JournalListRow> sortedDocs,
     int oldIndex,
     int newIndex,
   ) async {
     if (oldIndex == newIndex) return;
     if (newIndex > sortedDocs.length - 1) newIndex = sortedDocs.length - 1;
     if (newIndex < 0) newIndex = 0;
-    double orderForDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
-      final data = d.data();
+    double orderForRow(_JournalListRow r) {
+      final data = r.data;
       final order = data['order'];
       if (order is num) return order.toDouble();
       final createdAt = data['createdAt'] as Timestamp?;
@@ -3169,18 +3429,22 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
 
     double newOrder;
     if (newIndex == 0) {
-      newOrder = orderForDoc(sortedDocs[0]) + 1000;
+      newOrder = orderForRow(sortedDocs[0]) + 1000;
     } else if (newIndex >= sortedDocs.length - 1) {
-      newOrder = orderForDoc(sortedDocs[sortedDocs.length - 1]) - 1000;
+      newOrder = orderForRow(sortedDocs[sortedDocs.length - 1]) - 1000;
     } else {
-      newOrder = (orderForDoc(sortedDocs[newIndex - 1]) +
-              orderForDoc(sortedDocs[newIndex])) /
+      newOrder = (orderForRow(sortedDocs[newIndex - 1]) +
+              orderForRow(sortedDocs[newIndex])) /
           2;
     }
 
     final doc = sortedDocs[oldIndex];
     try {
-      await _journalRef.doc(doc.id).update({'order': newOrder});
+      if (_useHive && _journalStore != null) {
+        await _journalStore!.updateJournal(doc.id, {'order': newOrder});
+      } else {
+        await _journalRef.doc(doc.id).update({'order': newOrder});
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3192,7 +3456,11 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
 
   Future<void> _updateJournalCategory(String entryId, String category) async {
     try {
-      await _journalRef.doc(entryId).update({'category': category});
+      if (_useHive && _journalStore != null) {
+        await _journalStore!.updateJournal(entryId, {'category': category});
+      } else {
+        await _journalRef.doc(entryId).update({'category': category});
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3301,7 +3569,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final isDesktopWeb = kIsWeb && MediaQuery.of(context).size.width >= 1000;
     final now = DateTime.now();
     final pageTitle = _bottomTabIndex == 0
-        ? _displayedMonth
+        ? '${_shortMonthName(_selectedDate.month)} ${_selectedDate.day} · ${_weekdayShortLabel(_selectedDate)}'
         : (_bottomTabIndex == 1 ? 'Mistakes' : 'Journal');
     final pageSubtitle = _bottomTabIndex == 0
         ? 'Plan with clarity'
@@ -3378,32 +3646,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                 ),
               ),
             ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push<void>(
-                MaterialPageRoute<void>(
-                  builder: (context) => TimerPage(
-                    focusTasksRef: _focusTasksRef,
-                    onAddCompletedTask: ({required String title}) async {
-                      await _createTask(
-                        title: title,
-                        isRecurringDaily: false,
-                        initialIsDone: true,
-                        dateOverride: DateTime.now(),
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-            tooltip: 'Pomodoro',
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFE7EAF0)),
-            ),
-            icon: const Icon(Icons.timer_outlined),
-          ),
-          const SizedBox(width: 8),
         ],
     );
     return Scaffold(
@@ -3418,16 +3660,11 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         padding: EdgeInsets.only(
           top: MediaQuery.paddingOf(context).top + appBar.preferredSize.height,
         ),
-        child: Stack(
-          children: [
-            _bottomTabIndex == 0
-                ? _buildTodoTabBody(isDesktopWeb: isDesktopWeb, now: now)
-                : (_bottomTabIndex == 1
-                      ? _buildMistakesTabBody()
-                      : _buildJournalTabBody()),
-            if (_bottomTabIndex == 0) _buildReadingAloudBanner(),
-          ],
-        ),
+        child: _bottomTabIndex == 0
+            ? _buildTodoTabBody(isDesktopWeb: isDesktopWeb, now: now)
+            : (_bottomTabIndex == 1
+                  ? _buildMistakesTabBody()
+                  : _buildJournalTabBody()),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _bottomTabIndex,
@@ -3453,53 +3690,16 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       ),
       floatingActionButton: (!isDesktopWeb)
           ? (_bottomTabIndex == 0
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      FloatingActionButton(
-                        heroTag: 'goal',
-                        onPressed: () {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (context) => GoalPlannerPage(
-                                initialSelectedDate: _selectedDate,
-                                onCreateTask: ({
-                                  required DateTime forDate,
-                                  required String title,
-                                  required List<String> checklistTexts,
-                                }) =>
-                                    _createTask(
-                                  title: title,
-                                  isRecurringDaily: false,
-                                  checklistItems: checklistTexts,
-                                  dateOverride: forDate,
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                        tooltip: 'Goal planner',
-                        backgroundColor: const Color(0xFF111111),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(Icons.flag_circle_outlined),
-                      ),
-                      const SizedBox(height: 12),
-                      FloatingActionButton(
-                        heroTag: 'add_task',
-                        onPressed: _addTask,
-                        tooltip: 'Add task',
-                        backgroundColor: const Color(0xFF111111),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(Icons.add),
-                      ),
-                    ],
+                ? FloatingActionButton(
+                    heroTag: 'add_task',
+                    onPressed: _addTask,
+                    tooltip: 'Add task',
+                    backgroundColor: const Color(0xFF111111),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.add),
                   )
                 : (_bottomTabIndex == 1
                       ? Column(
@@ -3574,6 +3774,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                       builder: (context) =>
                                           AddJournalEntryPage(
                                         journalRef: _journalRef,
+                                        journalStore:
+                                            _useHive ? _journalStore : null,
                                       ),
                                     ),
                                   );

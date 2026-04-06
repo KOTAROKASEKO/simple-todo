@@ -33,13 +33,16 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.analyzeMistakes = exports.sendTestDailyCheckNotification = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
+exports.analyzeMistakes = exports.sendTestDailyCheckNotification = exports.deliverRandomJournalAiFeedback = exports.onJournalEntryCreatedQueueAi = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const vertexai_1 = require("@google-cloud/vertexai");
 const reminders_1 = require("./reminders");
 Object.defineProperty(exports, "sendDueTaskReminders", { enumerable: true, get: function () { return reminders_1.sendDueTaskReminders; } });
 Object.defineProperty(exports, "sendDailyCheckReminders", { enumerable: true, get: function () { return reminders_1.sendDailyCheckReminders; } });
+const journal_ai_surprise_1 = require("./journal_ai_surprise");
+Object.defineProperty(exports, "onJournalEntryCreatedQueueAi", { enumerable: true, get: function () { return journal_ai_surprise_1.onJournalEntryCreatedQueueAi; } });
+Object.defineProperty(exports, "deliverRandomJournalAiFeedback", { enumerable: true, get: function () { return journal_ai_surprise_1.deliverRandomJournalAiFeedback; } });
 admin.initializeApp();
 /** Sends one test "Check your tasks" FCM to the current user (for debugging). */
 exports.sendTestDailyCheckNotification = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {

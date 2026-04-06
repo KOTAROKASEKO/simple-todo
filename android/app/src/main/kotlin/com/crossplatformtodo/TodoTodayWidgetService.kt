@@ -26,10 +26,7 @@ private class TodoTodayRemoteViewsFactory(
     private val packageName: String,
     private val widgetId: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
-    private val taskIds = mutableListOf<String>()
-    private val taskTitles = mutableListOf<String>()
-    private val taskToggleDone = mutableListOf<String>()
-    private val taskIsDone = mutableListOf<String>()
+    private val rows = mutableListOf<WidgetRow>()
     private var isDark = true
 
     override fun onCreate() {
@@ -41,53 +38,85 @@ private class TodoTodayRemoteViewsFactory(
     }
 
     override fun onDestroy() {
-        taskIds.clear()
-        taskTitles.clear()
-        taskToggleDone.clear()
-        taskIsDone.clear()
+        rows.clear()
     }
 
     override fun getCount(): Int {
-        return taskIds.size
+        return rows.size
     }
 
     override fun getViewAt(position: Int): RemoteViews? {
-        if (position < 0 || position >= taskIds.size) {
+        if (position < 0 || position >= rows.size) {
             return null
         }
 
+        val row = rows[position]
         val remoteViews = RemoteViews(packageName, R.layout.todo_today_widget_list_item)
-        val title = taskTitles[position]
-        val done = taskIsDone[position] == "1"
-        val toggleDone = taskToggleDone[position]
+        val title = row.title
+        val done = row.done
+        val toggleDone = row.toggleDone
 
         remoteViews.setTextViewText(R.id.widget_item_title, title)
         remoteViews.setInt(
             R.id.widget_item_title,
             "setPaintFlags",
-            if (done) Paint.STRIKE_THRU_TEXT_FLAG else 0
+            if (done && !row.isChecklistChild) Paint.STRIKE_THRU_TEXT_FLAG else 0
         )
         remoteViews.setViewVisibility(
             R.id.widget_item_check,
             if (done) View.VISIBLE else View.GONE
         )
 
-        if (isDark) {
-            remoteViews.setInt(R.id.widget_task_row_root, "setBackgroundColor",
-                Color.parseColor("#262626"))
-            remoteViews.setTextColor(R.id.widget_item_title,
-                if (done) Color.parseColor("#6B7280") else Color.parseColor("#E5E7EB"))
-            remoteViews.setTextColor(R.id.widget_item_check, Color.parseColor("#22C55E"))
+        if (row.isChecklistChild) {
+            remoteViews.setInt(R.id.widget_task_row_root, "setBackgroundColor", Color.TRANSPARENT)
+            remoteViews.setTextColor(
+                R.id.widget_item_title,
+                if (isDark) Color.parseColor("#D1D5DB") else Color.parseColor("#374151")
+            )
+            remoteViews.setTextColor(
+                R.id.widget_item_check,
+                if (isDark) Color.parseColor("#86EFAC") else Color.parseColor("#16A34A")
+            )
         } else {
-            remoteViews.setInt(R.id.widget_task_row_root, "setBackgroundColor",
-                Color.parseColor("#FFFFFF"))
-            remoteViews.setTextColor(R.id.widget_item_title,
-                if (done) Color.parseColor("#9CA3AF") else Color.parseColor("#111827"))
-            remoteViews.setTextColor(R.id.widget_item_check, Color.parseColor("#16A34A"))
+            if (isDark) {
+                remoteViews.setInt(R.id.widget_task_row_root, "setBackgroundColor",
+                    Color.parseColor("#262626"))
+                remoteViews.setTextColor(R.id.widget_item_title,
+                    if (done) Color.parseColor("#6B7280") else Color.parseColor("#E5E7EB"))
+                remoteViews.setTextColor(R.id.widget_item_check, Color.parseColor("#22C55E"))
+            } else {
+                remoteViews.setInt(R.id.widget_task_row_root, "setBackgroundColor",
+                    Color.parseColor("#FFFFFF"))
+                remoteViews.setTextColor(R.id.widget_item_title,
+                    if (done) Color.parseColor("#9CA3AF") else Color.parseColor("#111827"))
+                remoteViews.setTextColor(R.id.widget_item_check, Color.parseColor("#16A34A"))
+            }
         }
 
-        val fillInIntent = Intent().apply {
-            data = Uri.parse("simpletodo://toggle?taskId=${taskIds[position]}&done=$toggleDone")
+        val fillInIntent = Intent()
+        if (row.isChecklistChild) {
+            fillInIntent.data = Uri.Builder()
+                .scheme("simpletodo")
+                .authority("toggleChecklist")
+                .appendQueryParameter("taskId", row.taskId)
+                .appendQueryParameter("index", (row.checklistIndex ?: -1).toString())
+                .appendQueryParameter("done", toggleDone)
+                .appendQueryParameter("widgetId", widgetId.toString())
+                .build()
+        } else if (row.hasChecklist) {
+            fillInIntent.data = Uri.Builder()
+                .scheme("simpletodo")
+                .authority("expand")
+                .appendQueryParameter("taskId", row.taskId)
+                .appendQueryParameter("widgetId", widgetId.toString())
+                .build()
+        } else {
+            fillInIntent.data = Uri.Builder()
+                .scheme("simpletodo")
+                .authority("toggle")
+                .appendQueryParameter("taskId", row.taskId)
+                .appendQueryParameter("done", toggleDone)
+                .build()
         }
         remoteViews.setOnClickFillInIntent(R.id.widget_task_row_root, fillInIntent)
         return remoteViews
@@ -98,11 +127,11 @@ private class TodoTodayRemoteViewsFactory(
     }
 
     override fun getViewTypeCount(): Int {
-        return 1
+        return 2
     }
 
     override fun getItemId(position: Int): Long {
-        return taskIds[position].hashCode().toLong()
+        return rows[position].stableId
     }
 
     override fun hasStableIds(): Boolean {
@@ -110,28 +139,70 @@ private class TodoTodayRemoteViewsFactory(
     }
 
     private fun loadFromPrefs() {
-        taskIds.clear()
-        taskTitles.clear()
-        taskToggleDone.clear()
-        taskIsDone.clear()
+        rows.clear()
 
         isDark = WidgetConfigureActivity.isDarkTheme(context, widgetId)
 
         val prefs = HomeWidgetPlugin.getData(context)
         val taskCount = prefs.getString("today_task_count", "0")?.toIntOrNull() ?: 0
+        val expandedTaskId = prefs.getString("today_widget_${widgetId}_expanded_task_id", "") ?: ""
 
         for (i in 0 until taskCount) {
             val id = prefs.getString("today_task_${i}_id", "") ?: ""
             val title = prefs.getString("today_task_${i}_title", "") ?: ""
             val toggle = prefs.getString("today_task_${i}_toggle_done", "0") ?: "0"
             val done = prefs.getString("today_task_${i}_is_done", "0") ?: "0"
+            val checklistCount = prefs.getString("today_task_${i}_checklist_count", "0")?.toIntOrNull() ?: 0
 
             if (id.isBlank() || title.isBlank()) continue
 
-            taskIds.add(id)
-            taskTitles.add(title)
-            taskToggleDone.add(toggle)
-            taskIsDone.add(done)
+            val isExpanded = checklistCount > 0 && expandedTaskId == id
+            val displayTitle = if (checklistCount > 0) {
+                if (isExpanded) "▾ $title" else "▸ $title"
+            } else {
+                title
+            }
+            rows.add(
+                WidgetRow(
+                    stableId = ("task|$id").hashCode().toLong(),
+                    taskId = id,
+                    title = displayTitle,
+                    done = done == "1",
+                    toggleDone = toggle,
+                    hasChecklist = checklistCount > 0,
+                    isChecklistChild = false,
+                )
+            )
+            if (isExpanded) {
+                for (j in 0 until checklistCount) {
+                    val childText = prefs.getString("today_task_${i}_checklist_${j}_text", "") ?: ""
+                    if (childText.isBlank()) continue
+                    val childDone = prefs.getString("today_task_${i}_checklist_${j}_is_done", "0") == "1"
+                    rows.add(
+                        WidgetRow(
+                            stableId = ("check|$id|$j").hashCode().toLong(),
+                            taskId = id,
+                            title = "• $childText",
+                            done = childDone,
+                            toggleDone = if (childDone) "0" else "1",
+                            hasChecklist = false,
+                            isChecklistChild = true,
+                            checklistIndex = j,
+                        )
+                    )
+                }
+            }
         }
     }
+
+    private data class WidgetRow(
+        val stableId: Long,
+        val taskId: String,
+        val title: String,
+        val done: Boolean,
+        val toggleDone: String,
+        val hasChecklist: Boolean,
+        val isChecklistChild: Boolean,
+        val checklistIndex: Int? = null,
+    )
 }

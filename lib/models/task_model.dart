@@ -1,16 +1,22 @@
-import 'package:hive/hive.dart';
+/// Checklist row used by the task UI and local store.
+class TaskChecklistItem {
+  TaskChecklistItem({required this.text, this.isDone = false});
 
-part 'task_model.g.dart';
+  String text;
+  bool isDone;
+}
 
-@HiveType(typeId: 0)
-class HiveTask extends HiveObject {
-  HiveTask({
+/// In-memory task for the home UI. Persisted on mobile via Isar [TaskDoc].
+class LocalTask {
+  LocalTask({
     this.firestoreId,
+    required this.storageKey,
     required this.title,
     this.isDone = false,
     this.isRecurringDaily = false,
     this.dateKey,
     this.lastResetOn,
+    this.completedOnDayKey,
     this.createdAtMillis,
     this.checklist,
     this.reminderHour,
@@ -21,59 +27,24 @@ class HiveTask extends HiveObject {
     this.checklistDoneByDate,
   });
 
-  @HiveField(0)
+  /// Set after the Firestore document exists; null while `storageKey` is a temp id.
   String? firestoreId;
 
-  @HiveField(1)
+  /// Isar `docKey` — Firestore id or `temp_…` while creating.
+  String storageKey;
+
   String title;
-
-  @HiveField(2)
   bool isDone;
-
-  @HiveField(3)
   bool isRecurringDaily;
-
-  @HiveField(4)
   String? dateKey;
-
-  @HiveField(5)
   String? lastResetOn;
-
-  @HiveField(6)
+  String? completedOnDayKey;
   int? createdAtMillis;
-
-  @HiveField(7)
-  List<HiveChecklistItem>? checklist;
-
-  @HiveField(8)
+  List<TaskChecklistItem>? checklist;
   int? reminderHour;
-
-  @HiveField(9)
   int? reminderMinute;
-
-  @HiveField(10)
   int? remindAtMillis;
-
-  @HiveField(11)
   bool reminderPending;
-
-  @HiveField(12)
   Map<String, bool>? doneByDate;
-
-  /// Per-day checklist completion for recurring daily tasks (parallel to [checklist]).
-  @HiveField(13)
   Map<String, List<bool>>? checklistDoneByDate;
-
-  String get id => firestoreId ?? key?.toString() ?? '';
-}
-
-@HiveType(typeId: 1)
-class HiveChecklistItem {
-  HiveChecklistItem({required this.text, this.isDone = false});
-
-  @HiveField(0)
-  String text;
-
-  @HiveField(1)
-  bool isDone;
 }

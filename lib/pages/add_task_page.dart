@@ -26,6 +26,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
   final List<TextEditingController> _checklistControllers = [
     TextEditingController(),
   ];
+  final List<FocusNode> _checklistFocusNodes = [FocusNode()];
   bool _recurring = false;
   bool _hasReminder = false;
   TimeOfDay? _reminderTime;
@@ -38,7 +39,29 @@ class _AddTaskPageState extends State<AddTaskPage> {
     for (final c in _checklistControllers) {
       c.dispose();
     }
+    for (final n in _checklistFocusNodes) {
+      n.dispose();
+    }
     super.dispose();
+  }
+
+  void _focusNextChecklistField(int index) {
+    if (index < _checklistControllers.length - 1) {
+      _checklistFocusNodes[index + 1].requestFocus();
+      return;
+    }
+    if (_checklistControllers[index].text.trim().isEmpty) {
+      return;
+    }
+    setState(() {
+      _checklistControllers.add(TextEditingController());
+      _checklistFocusNodes.add(FocusNode());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _checklistFocusNodes.last.requestFocus();
+      }
+    });
   }
 
   List<String> _checklistTexts() {
@@ -73,13 +96,9 @@ class _AddTaskPageState extends State<AddTaskPage> {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: _checklistFocusNodes[index],
               textInputAction: TextInputAction.next,
-              onSubmitted: (_) {
-                if (controller.text.trim().isEmpty) return;
-                setState(() {
-                  _checklistControllers.add(TextEditingController());
-                });
-              },
+              onEditingComplete: () => _focusNextChecklistField(index),
               decoration: InputDecoration(
                 hintText: 'Checklist item ${index + 1}',
                 border: OutlineInputBorder(
@@ -99,6 +118,8 @@ class _AddTaskPageState extends State<AddTaskPage> {
                   if (_checklistControllers.length == 1) {
                     _checklistControllers.first.clear();
                   } else {
+                    _checklistFocusNodes[index].dispose();
+                    _checklistFocusNodes.removeAt(index);
                     final removed = _checklistControllers.removeAt(index);
                     removed.dispose();
                   }
@@ -243,6 +264,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     onPressed: () {
                       setState(() {
                         _checklistControllers.add(TextEditingController());
+                        _checklistFocusNodes.add(FocusNode());
                       });
                     },
                     icon: const Icon(Icons.add, size: 18),
@@ -260,7 +282,9 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     setState(() {
                       if (newIndex > oldIndex) newIndex--;
                       final c = _checklistControllers.removeAt(oldIndex);
+                      final fn = _checklistFocusNodes.removeAt(oldIndex);
                       _checklistControllers.insert(newIndex, c);
+                      _checklistFocusNodes.insert(newIndex, fn);
                     });
                   },
                   itemBuilder: (context, index) {

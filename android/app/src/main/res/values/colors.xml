@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="widget_configure_bg">#F3F4F6</color>
+    <!-- Matches Flutter scaffold (see app.dart) — avoids a black window while the engine starts -->
+    <color name="flutter_surface">#FFF6F7F9</color>
 </resources>
