@@ -6,7 +6,7 @@ class TaskChecklistItem {
   bool isDone;
 }
 
-/// In-memory task for the home UI. Persisted on mobile via Isar [TaskDoc].
+/// In-memory task for the home UI. On IO, mirrored in Isar by [TaskStore].
 class LocalTask {
   LocalTask({
     this.firestoreId,
@@ -23,8 +23,12 @@ class LocalTask {
     this.reminderMinute,
     this.remindAtMillis,
     this.reminderPending = false,
+    this.reminderSuperImportant = false,
     this.doneByDate,
     this.checklistDoneByDate,
+    this.recurringStreakRewardDay = 1,
+    this.recurringStreakLastPaidDayKey,
+    this.lastTaskRewardDayKey,
   });
 
   /// Set after the Firestore document exists; null while `storageKey` is a temp id.
@@ -45,6 +49,11 @@ class LocalTask {
   int? reminderMinute;
   int? remindAtMillis;
   bool reminderPending;
+  bool reminderSuperImportant;
   Map<String, bool>? doneByDate;
   Map<String, List<bool>>? checklistDoneByDate;
+
+  int recurringStreakRewardDay;
+  String? recurringStreakLastPaidDayKey;
+  String? lastTaskRewardDayKey;
 }

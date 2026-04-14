@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:simpletodo/notification_service.dart';
+import 'package:simpletodo/push_notification_service.dart';
 
 /// Page to set the three daily "check your todo list" notification times.
 class NotificationSettingsPage extends StatefulWidget {
@@ -94,6 +95,15 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     if (kIsWeb) return;
     setState(() => _saving = true);
     try {
+      if (mounted) {
+        await PushNotificationService.instance.showRationaleAndRequestPush(
+          context,
+          title: 'Review your tasks',
+          message:
+              'Allow notifications for nudges at the times you set to review your todo list. '
+              'We also schedule quiet reminders on this device when supported.',
+        );
+      }
       await NotificationService.instance.setDailyReminderTimes(_times);
       // Schedule local daily check reminders on supported platforms (Android).
       await NotificationService.instance.scheduleDailyCheckReminders();

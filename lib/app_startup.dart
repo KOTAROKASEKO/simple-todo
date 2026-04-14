@@ -9,6 +9,7 @@ import 'package:simpletodo/app.dart';
 import 'package:simpletodo/firebase_options.dart';
 import 'package:simpletodo/notification_service.dart';
 import 'package:simpletodo/push_notification_service.dart';
+import 'package:simpletodo/services/google_sign_in_firebase.dart';
 import 'package:simpletodo/widget_interactivity.dart';
 
 /// Same as [TodoApp] scaffold — avoids a black flash before the first frame.
@@ -38,6 +39,12 @@ class _AppStartupState extends State<AppStartup> {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      try {
+        await initializeGoogleSignInForApp();
+      } catch (e, st) {
+        debugPrint('Google Sign-In init failed (sign-in may be unavailable): $e');
+        debugPrint('$st');
+      }
       if (!kIsWeb) {
         await Hive.initFlutter();
       }

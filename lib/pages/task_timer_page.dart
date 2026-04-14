@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -24,6 +25,7 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
   late int _remainingSeconds;
   Timer? _ticker;
   bool _running = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -36,6 +38,7 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -67,6 +70,11 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
           _remainingSeconds = 0;
           _running = false;
         });
+        unawaited(
+          _audioPlayer.play(AssetSource('sound/timer_end.mp3')).catchError((_) {
+            SystemSound.play(SystemSoundType.alert);
+          }),
+        );
         HapticFeedback.mediumImpact();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Time is up')),

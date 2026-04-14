@@ -3,6 +3,10 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {VertexAI} from "@google-cloud/vertexai";
 import {sendDueTaskReminders, sendDailyCheckReminders} from "./reminders";
 import {
+  journalDailyReminderCopy,
+  sendJournalDailyReminders,
+} from "./journal_daily_reminder";
+import {
   onJournalEntryCreatedQueueAi,
   deliverRandomJournalAiFeedback,
 } from "./journal_ai_surprise";
@@ -12,6 +16,7 @@ admin.initializeApp();
 export {
   sendDueTaskReminders,
   sendDailyCheckReminders,
+  sendJournalDailyReminders,
   onJournalEntryCreatedQueueAi,
   deliverRandomJournalAiFeedback,
 };
@@ -45,6 +50,53 @@ export const sendTestDailyCheckNotification = onCall(
       notification: {
         title: "Check your tasks",
         body: "Test notification（テスト送信）",
+      },
+    });
+    return {ok: true};
+  },
+);
+
+/** Sends one test journal 8 PM-style reminder (character + greeting from Firestore). */
+export const sendTestJournalDailyReminder = onCall(
+  {region: "us-central1"},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const userRef = db.collection("todo").doc(uid);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() ?? {};
+    const characterId =
+      typeof userData.journalAiCharacter === "string"
+        ? userData.journalAiCharacter.trim()
+        : "default";
+    const greetingName =
+      typeof userData.journalDailyReminderGreetingName === "string"
+        ? userData.journalDailyReminderGreetingName
+        : "";
+    const copy = journalDailyReminderCopy(characterId, greetingName);
+
+    const tokensSnap = await userRef.collection("deviceTokens").get();
+    const tokens = tokensSnap.docs
+      .map((d) => d.get("token"))
+      .filter((t): t is string => typeof t === "string" && t.length > 0);
+    if (tokens.length === 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "No device token registered. Open the app and try again.",
+      );
+    }
+    const messaging = admin.messaging();
+    await messaging.sendEachForMulticast({
+      tokens,
+      notification: {
+        title: copy.title,
+        body: `[Test] ${copy.body}`,
+      },
+      data: {
+        type: "journal_daily_reminder",
       },
     });
     return {ok: true};

@@ -6,24 +6,26 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, lis
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
-import 'package:simpletodo/models/task_model.dart';
 import 'package:simpletodo/notification_service.dart';
+import 'package:simpletodo/push_notification_service.dart';
+import 'package:simpletodo/services/google_sign_in_firebase.dart';
 import 'package:hive/hive.dart';
-import 'package:simpletodo/services/app_isar.dart';
-import 'package:simpletodo/services/journal_store.dart';
-import 'package:simpletodo/services/task_store.dart';
+import 'package:simpletodo_data/simpletodo_data.dart';
 import 'package:simpletodo/web_favicon_badge.dart';
 import 'package:simpletodo/pages/add_journal_entry_page.dart';
-import 'package:simpletodo/pages/add_mistake_page.dart';
 import 'package:simpletodo/pages/add_task_page.dart';
 import 'package:simpletodo/pages/mistake_analysis_page.dart';
 import 'package:simpletodo/pages/view_journal_entry_page.dart';
 import 'package:simpletodo/pages/edit_task_page.dart';
+import 'package:simpletodo/pages/journal_character_shop_page.dart';
 import 'package:simpletodo/pages/journal_personalization_page.dart';
 import 'package:simpletodo/pages/notification_settings_page.dart';
 import 'package:simpletodo/pages/task_timer_page.dart';
 import 'package:simpletodo/utils/task_duration_text.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:simpletodo/journal_ai_character_assets.dart';
+import 'package:simpletodo/task_completion_rewards.dart';
+import 'package:simpletodo/widgets/journal_ai_character_avatar.dart';
 import 'package:simpletodo/widgets/liquid_glass_app_bar.dart';
 
 typedef _JournalListRow = ({String id, Map<String, dynamic> data});
@@ -65,6 +67,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
   bool _desktopRecurring = false;
   bool _desktopHasReminder = false;
   TimeOfDay? _desktopReminderTime;
+  bool _desktopReminderSuperImportant = false;
   List<TextEditingController> _desktopChecklistControllers =
       [TextEditingController()];
   List<FocusNode> _desktopChecklistFocusNodes = [FocusNode()];
@@ -204,6 +207,122 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     return '$taskId|${_dayKey(date)}';
   }
 
+  /// Recurring tasks: show next 7-day payout ladder (coins per day).
+  Widget _buildDailyStreakRow(Map<String, dynamic> data) {
+    final nextTier =
+        ((data['recurringStreakRewardDay'] as num?)?.toInt() ?? 1).clamp(1, 7);
+    final todayRewardKey = taskRewardDayKey(DateTime.now());
+    final rewardedToday = (data['lastTaskRewardDayKey'] as String?) == todayRewardKey;
+    const blueBorder = Color(0xFF2563EB);
+    const blueFill = Color(0xFFEFF6FF);
+    const greenBorder = Color(0xFF16A34A);
+    const greenFill = Color(0xFFF0FDF4);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '7-day streak · next payout',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            color: Colors.grey.shade800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 76,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: 7,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final day = i + 1;
+              final coins = kRecurringStreakCoinsByDay[day - 1];
+              final isCompleted = day < nextTier;
+              final isToday = day == nextTier && !rewardedToday;
+              late final Color bg;
+              late final Color borderColor;
+              late final double borderWidth;
+              late final Color labelColor;
+              late final Color coinColor;
+              if (isCompleted) {
+                bg = blueFill;
+                borderColor = blueBorder;
+                borderWidth = 1.5;
+                labelColor = const Color(0xFF1D4ED8);
+                coinColor = const Color(0xFF1E40AF);
+              } else if (isToday) {
+                bg = greenFill;
+                borderColor = greenBorder;
+                borderWidth = 2;
+                labelColor = const Color(0xFF15803D);
+                coinColor = const Color(0xFF166534);
+              } else {
+                bg = Colors.grey.shade100;
+                borderColor = Colors.grey.shade400;
+                borderWidth = 1;
+                labelColor = Colors.grey.shade600;
+                coinColor = Colors.grey.shade700;
+              }
+              return SizedBox(
+                width: 78,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: borderColor,
+                      width: borderWidth,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (isCompleted) ...[
+                        Icon(
+                          Icons.check_circle_rounded,
+                          size: 14,
+                          color: const Color(0xFF1D4ED8),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      Text(
+                        'Day $day',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.25,
+                          color: labelColor,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '+$coins',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.35,
+                          color: coinColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   bool _resolvedTaskDoneForDate(
     DocumentSnapshot<Map<String, dynamic>> doc,
     DateTime date,
@@ -259,12 +378,14 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
             required String title,
             required bool isRecurringDaily,
             TimeOfDay? reminderTime,
+            bool reminderSuperImportant = false,
             List<String>? checklistItems,
           }) =>
               _createTask(
             title: title,
             isRecurringDaily: isRecurringDaily,
             reminderTime: reminderTime,
+            reminderSuperImportant: reminderSuperImportant,
             checklistItems: checklistItems,
           ),
         ),
@@ -280,6 +401,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       title: _addTaskTitleController.text,
       isRecurringDaily: _desktopRecurring,
       reminderTime: _desktopHasReminder ? _desktopReminderTime : null,
+      reminderSuperImportant:
+          _desktopHasReminder && _desktopReminderSuperImportant,
       checklistItems: checklistTexts.isNotEmpty ? checklistTexts : null,
     );
 
@@ -292,6 +415,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       _desktopRecurring = false;
       _desktopHasReminder = false;
       _desktopReminderTime = null;
+      _desktopReminderSuperImportant = false;
       for (final controller in _desktopChecklistControllers) {
         controller.dispose();
       }
@@ -326,6 +450,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     required String title,
     required bool isRecurringDaily,
     TimeOfDay? reminderTime,
+    bool reminderSuperImportant = false,
     List<String>? checklistItems,
     bool initialIsDone = false,
     DateTime? dateOverride,
@@ -375,10 +500,28 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       taskData['reminderMinute'] = reminderTime.minute;
       taskData['remindAt'] = Timestamp.fromDate(remindAt.toUtc());
       taskData['reminderPending'] = true;
+      taskData['reminderSuperImportant'] = reminderSuperImportant;
     }
 
     if (reminderTime != null && !_useServerPushReminders) {
-      _scheduleReminder(trimmed, _selectedDate, reminderTime);
+      _scheduleReminder(
+        trimmed,
+        targetDate,
+        reminderTime,
+        superImportant: reminderSuperImportant,
+      );
+    }
+
+    if (reminderTime != null &&
+        _useServerPushReminders &&
+        !kIsWeb &&
+        mounted) {
+      await PushNotificationService.instance.showRationaleAndRequestPush(
+        context,
+        title: 'Task reminders',
+        message:
+            'Allow notifications so this device can receive reminders when your tasks are due.',
+      );
     }
 
     try {
@@ -526,8 +669,9 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
   Future<void> _scheduleReminder(
     String taskTitle,
     DateTime date,
-    TimeOfDay time,
-  ) async {
+    TimeOfDay time, {
+    bool superImportant = false,
+  }) async {
     if (kIsWeb) {
       // On web we do not schedule native notifications; instead we surface
       // upcoming reminders via the browser tab icon badge.
@@ -544,6 +688,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final notifId = await NotificationService.instance.scheduleReminder(
       taskTitle: taskTitle,
       scheduledTime: scheduledTime,
+      superImportant: superImportant,
     );
 
     if (notifId == null && mounted) {
@@ -698,62 +843,120 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       unawaited(_toggleTaskById(doc.id, value));
       return;
     }
-    final data = doc.data() ?? <String, dynamic>{};
-    final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
-    final checklist = _taskChecklistFromData(data);
+    unawaited(_toggleTaskFirestoreDoc(doc.reference, value));
+  }
 
-    late final Future<void> writeFuture;
-    if (!isRecurringDaily) {
-      if (checklist.isEmpty) {
-        final u = <String, dynamic>{'isDone': value};
-        _mergeCompletedOnDayKeyForOneTimeUpdate(u, value, _selectedDate);
-        writeFuture = doc.reference.update(u);
-      } else {
-        final updatedChecklist = checklist
-            .map((item) => _TaskChecklistItem(text: item.text, isDone: value))
-            .toList();
-        final u = <String, dynamic>{
-          'checklist': _checklistToFirestore(updatedChecklist),
-          'isDone': value,
-        };
-        _mergeCompletedOnDayKeyForOneTimeUpdate(u, value, _selectedDate);
-        writeFuture = doc.reference.update(u);
-      }
-    } else {
-      final selectedKey = _dayKey(_selectedDate);
-      final texts = _taskChecklistTextsFromData(data);
-      if (texts.isEmpty) {
-        writeFuture = doc.reference.set(<String, dynamic>{
-          'doneByDate': <String, dynamic>{selectedKey: value},
-        }, SetOptions(merge: true));
-      } else {
-        final template = texts
-            .map((t) => <String, dynamic>{'text': t, 'isDone': false})
-            .toList();
-        writeFuture = doc.reference.set(<String, dynamic>{
-          'checklist': template,
-          'doneByDate': <String, dynamic>{selectedKey: value},
-          'checklistDoneByDate': <String, dynamic>{
-            selectedKey: List<bool>.filled(texts.length, value),
-          },
-        }, SetOptions(merge: true));
-      }
-    }
-
-    unawaited(
-      writeFuture.then((_) {
-        unawaited(_syncTodayWidgetData());
-      }).catchError((Object e) {
-        if (!mounted) {
+  Future<void> _toggleTaskFirestoreDoc(
+    DocumentReference<Map<String, dynamic>> docRef,
+    bool value, {
+    DateTime? completionCalendarDate,
+  }) async {
+    final cal = completionCalendarDate ?? _selectedDate;
+    final calDay = DateTime(cal.year, cal.month, cal.day);
+    var shouldHaptic = false;
+    var coinsEarned = 0;
+    try {
+      await FirebaseFirestore.instance.runTransaction((tx) async {
+        final snap = await tx.get(docRef);
+        if (!snap.exists) {
           return;
         }
-        if (e is FirebaseException) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
+        final data = snap.data() ?? <String, dynamic>{};
+        final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+        final wasDone = _isTaskDoneForDate(data, calDay);
+        final selectedKey = _dayKey(calDay);
+
+        late final Map<String, dynamic> payload;
+        late final bool nowDone;
+
+        if (!isRecurringDaily) {
+          final checklist = _taskChecklistFromData(data);
+          if (checklist.isEmpty) {
+            nowDone = value;
+            final u = <String, dynamic>{'isDone': value};
+            _mergeCompletedOnDayKeyForOneTimeUpdate(u, value, calDay);
+            payload = u;
+          } else {
+            final updatedChecklist = checklist
+                .map(
+                  (item) => _TaskChecklistItem(text: item.text, isDone: value),
+                )
+                .toList();
+            nowDone = _isChecklistDone(updatedChecklist);
+            final u = <String, dynamic>{
+              'checklist': _checklistToFirestore(updatedChecklist),
+              'isDone': nowDone,
+            };
+            _mergeCompletedOnDayKeyForOneTimeUpdate(u, nowDone, calDay);
+            payload = u;
+          }
+        } else {
+          final texts = _taskChecklistTextsFromData(data);
+          if (texts.isEmpty) {
+            nowDone = value;
+            payload = <String, dynamic>{
+              'doneByDate': <String, dynamic>{selectedKey: value},
+            };
+          } else {
+            nowDone = value;
+            final template = texts
+                .map((t) => <String, dynamic>{'text': t, 'isDone': false})
+                .toList();
+            payload = <String, dynamic>{
+              'checklist': template,
+              'doneByDate': <String, dynamic>{selectedKey: value},
+              'checklistDoneByDate': <String, dynamic>{
+                selectedKey: List<bool>.filled(texts.length, value),
+              },
+            };
+          }
+        }
+
+        final reward = computeTaskCompletionReward(
+          data: data,
+          selectedDate: calDay,
+          wasDoneForDay: wasDone,
+          nowDoneForDay: nowDone,
+        );
+        coinsEarned = reward.coins;
+        if (reward.taskPatches.isNotEmpty) {
+          payload.addAll(reward.taskPatches);
+        }
+        tx.update(docRef, flattenFirestoreUpdateData(payload));
+
+        if (reward.coins > 0) {
+          final userRef = FirebaseFirestore.instance
+              .collection('todo')
+              .doc(widget.user.uid);
+          tx.set(
+            userRef,
+            <String, dynamic>{
+              'taskCoins': FieldValue.increment(reward.coins),
+            },
+            SetOptions(merge: true),
           );
         }
-      }),
-    );
+        shouldHaptic = !wasDone && nowDone;
+      });
+      if (shouldHaptic) {
+        _playTaskDoneHaptic();
+      }
+      if (coinsEarned > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('+$coinsEarned coins')),
+        );
+      }
+      unawaited(_syncTodayWidgetData());
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      if (e is FirebaseException) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update: ${e.message ?? e.code}')),
+        );
+      }
+    }
   }
 
   Future<void> _toggleTaskById(String taskId, bool value) async {
@@ -764,13 +967,12 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
     final checklist = _taskChecklistFromData(data);
     final wasDone = _isTaskDoneForDate(data, _selectedDate);
-    if (!wasDone && value) {
-      _playTaskDoneHaptic();
-    }
     try {
-      Map<String, dynamic> updateData;
+      late final Map<String, dynamic> updateData;
+      late final bool nowDone;
       if (!isRecurringDaily) {
         if (checklist.isEmpty) {
+          nowDone = value;
           updateData = <String, dynamic>{'isDone': value};
         } else {
           final updatedChecklist = checklist
@@ -779,19 +981,22 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                     _TaskChecklistItem(text: item.text, isDone: value),
               )
               .toList();
+          nowDone = _isChecklistDone(updatedChecklist);
           updateData = <String, dynamic>{
             'checklist': _checklistToFirestore(updatedChecklist),
-            'isDone': value,
+            'isDone': nowDone,
           };
         }
       } else {
         final selectedKey = _dayKey(_selectedDate);
         final texts = _taskChecklistTextsFromData(data);
         if (texts.isEmpty) {
+          nowDone = value;
           updateData = <String, dynamic>{
             'doneByDate': <String, dynamic>{selectedKey: value},
           };
         } else {
+          nowDone = value;
           updateData = <String, dynamic>{
             'checklist': texts
                 .map((t) => <String, dynamic>{'text': t, 'isDone': false})
@@ -806,11 +1011,39 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       if (!isRecurringDaily) {
         _mergeCompletedOnDayKeyForOneTimeUpdate(
           updateData,
-          value,
+          nowDone,
           _selectedDate,
         );
       }
+      final reward = computeTaskCompletionReward(
+        data: data,
+        selectedDate: _selectedDate,
+        wasDoneForDay: wasDone,
+        nowDoneForDay: nowDone,
+      );
+      if (reward.taskPatches.isNotEmpty) {
+        updateData.addAll(reward.taskPatches);
+      }
       await _taskStore!.updateTask(taskId, updateData);
+      if (reward.coins > 0) {
+        await FirebaseFirestore.instance
+            .collection('todo')
+            .doc(widget.user.uid)
+            .set(
+          <String, dynamic>{
+            'taskCoins': FieldValue.increment(reward.coins),
+          },
+          SetOptions(merge: true),
+        );
+      }
+      if (!wasDone && nowDone) {
+        _playTaskDoneHaptic();
+      }
+      if (reward.coins > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('+${reward.coins} coins')),
+        );
+      }
       unawaited(_syncTodayWidgetData());
     } catch (e) {
       if (!mounted) {
@@ -869,6 +1102,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           _recurringChecklistDoneBoolsForDay(data, dayKey, texts.length),
         );
         bools[index] = value;
+        final wasDone = _isTaskDoneForDate(data, _selectedDate);
         final isDone = bools.every((e) => e);
         final template = texts
             .map((t) => <String, dynamic>{'text': t, 'isDone': false})
@@ -878,7 +1112,35 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           'checklistDoneByDate': <String, dynamic>{dayKey: bools},
           'doneByDate': <String, dynamic>{dayKey: isDone},
         };
+        final reward = computeTaskCompletionReward(
+          data: data,
+          selectedDate: _selectedDate,
+          wasDoneForDay: wasDone,
+          nowDoneForDay: isDone,
+        );
+        if (reward.taskPatches.isNotEmpty) {
+          updateData.addAll(reward.taskPatches);
+        }
         await doc.reference.update(flattenFirestoreUpdateData(updateData));
+        if (reward.coins > 0) {
+          await FirebaseFirestore.instance
+              .collection('todo')
+              .doc(widget.user.uid)
+              .set(
+            <String, dynamic>{
+              'taskCoins': FieldValue.increment(reward.coins),
+            },
+            SetOptions(merge: true),
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('+${reward.coins} coins')),
+            );
+          }
+        }
+        if (!wasDone && isDone) {
+          _playTaskDoneHaptic();
+        }
         await _syncTodayWidgetData();
         return;
       }
@@ -887,6 +1149,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         return;
       }
       final updatedChecklist = List<_TaskChecklistItem>.from(checklist);
+      final wasDone = _isTaskDoneForDate(data, _selectedDate);
       updatedChecklist[index] = _TaskChecklistItem(
         text: updatedChecklist[index].text,
         isDone: value,
@@ -901,7 +1164,35 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         isDone,
         _selectedDate,
       );
+      final reward = computeTaskCompletionReward(
+        data: data,
+        selectedDate: _selectedDate,
+        wasDoneForDay: wasDone,
+        nowDoneForDay: isDone,
+      );
+      if (reward.taskPatches.isNotEmpty) {
+        updateData.addAll(reward.taskPatches);
+      }
       await doc.reference.update(flattenFirestoreUpdateData(updateData));
+      if (reward.coins > 0) {
+        await FirebaseFirestore.instance
+            .collection('todo')
+            .doc(widget.user.uid)
+            .set(
+          <String, dynamic>{
+            'taskCoins': FieldValue.increment(reward.coins),
+          },
+          SetOptions(merge: true),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('+${reward.coins} coins')),
+          );
+        }
+      }
+      if (!wasDone && isDone) {
+        _playTaskDoneHaptic();
+      }
       await _syncTodayWidgetData();
     } on FirebaseException catch (e) {
       if (!mounted) {
@@ -923,7 +1214,9 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
 
     final data = _taskStore!.taskToMap(task);
     final isRecurringDaily = (data['isRecurringDaily'] as bool?) ?? false;
+    final wasDone = _isTaskDoneForDate(data, _selectedDate);
     Map<String, dynamic> updateData;
+    late final bool nowDone;
     if (isRecurringDaily) {
       final texts = _taskChecklistTextsFromData(data);
       if (index < 0 || index >= texts.length) {
@@ -934,14 +1227,14 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         _recurringChecklistDoneBoolsForDay(data, dayKey, texts.length),
       );
       bools[index] = value;
-      final isDone = bools.every((e) => e);
+      nowDone = bools.every((e) => e);
       final template = texts
           .map((t) => <String, dynamic>{'text': t, 'isDone': false})
           .toList();
       updateData = <String, dynamic>{
         'checklist': template,
         'checklistDoneByDate': <String, dynamic>{dayKey: bools},
-        'doneByDate': <String, dynamic>{dayKey: isDone},
+        'doneByDate': <String, dynamic>{dayKey: nowDone},
       };
     } else {
       final checklist = _taskChecklistFromData(data);
@@ -954,21 +1247,50 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         text: updatedChecklist[index].text,
         isDone: value,
       );
-      final isDone = _isChecklistDone(updatedChecklist);
+      nowDone = _isChecklistDone(updatedChecklist);
 
       updateData = <String, dynamic>{
         'checklist': _checklistToFirestore(updatedChecklist),
-        'isDone': isDone,
+        'isDone': nowDone,
       };
       _mergeCompletedOnDayKeyForOneTimeUpdate(
         updateData,
-        isDone,
+        nowDone,
         _selectedDate,
       );
     }
 
+    final reward = computeTaskCompletionReward(
+      data: data,
+      selectedDate: _selectedDate,
+      wasDoneForDay: wasDone,
+      nowDoneForDay: nowDone,
+    );
+    if (reward.taskPatches.isNotEmpty) {
+      updateData.addAll(reward.taskPatches);
+    }
+
     try {
       await _taskStore!.updateTask(taskId, updateData);
+      if (reward.coins > 0) {
+        await FirebaseFirestore.instance
+            .collection('todo')
+            .doc(widget.user.uid)
+            .set(
+          <String, dynamic>{
+            'taskCoins': FieldValue.increment(reward.coins),
+          },
+          SetOptions(merge: true),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('+${reward.coins} coins')),
+          );
+        }
+      }
+      if (!wasDone && nowDone) {
+        _playTaskDoneHaptic();
+      }
       await _syncTodayWidgetData();
     } on FirebaseException catch (e) {
       if (!mounted) return;
@@ -1127,55 +1449,13 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       }
 
       try {
-        final taskRef = _tasksRef.doc(taskId);
-        final taskSnap = await taskRef.get();
-        if (!taskSnap.exists) {
-          return;
-        }
-        final taskData = taskSnap.data() ?? <String, dynamic>{};
-        final isRecurringDaily =
-            (taskData['isRecurringDaily'] as bool?) ?? false;
-        final checklist = _taskChecklistFromData(taskData);
-        if (!isRecurringDaily) {
-          final today = DateTime.now();
-          if (checklist.isEmpty) {
-            final u = <String, dynamic>{'isDone': done};
-            _mergeCompletedOnDayKeyForOneTimeUpdate(u, done, today);
-            await taskRef.update(u);
-          } else {
-            final updatedChecklist = checklist
-                .map(
-                  (item) => _TaskChecklistItem(text: item.text, isDone: done),
-                )
-                .toList();
-            final u = <String, dynamic>{
-              'checklist': _checklistToFirestore(updatedChecklist),
-              'isDone': done,
-            };
-            _mergeCompletedOnDayKeyForOneTimeUpdate(u, done, today);
-            await taskRef.update(u);
-          }
-        } else {
-          final todayKey = _dayKey(DateTime.now());
-          final texts = _taskChecklistTextsFromData(taskData);
-          if (texts.isEmpty) {
-            await taskRef.set(<String, dynamic>{
-              'doneByDate': <String, dynamic>{todayKey: done},
-            }, SetOptions(merge: true));
-          } else {
-            final template = texts
-                .map((t) => <String, dynamic>{'text': t, 'isDone': false})
-                .toList();
-            await taskRef.set(<String, dynamic>{
-              'checklist': template,
-              'doneByDate': <String, dynamic>{todayKey: done},
-              'checklistDoneByDate': <String, dynamic>{
-                todayKey: List<bool>.filled(texts.length, done),
-              },
-            }, SetOptions(merge: true));
-          }
-        }
-        await _syncTodayWidgetData();
+        final now = DateTime.now();
+        final today = DateTime(now.year, now.month, now.day);
+        await _toggleTaskFirestoreDoc(
+          _tasksRef.doc(taskId),
+          done,
+          completionCalendarDate: today,
+        );
       } on FirebaseException catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1211,7 +1491,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final initialTitle = (data['title'] as String?) ?? 'Untitled task';
     final initialChecklist =
         _taskChecklistFromDataForDate(data, _selectedDate);
-    final initialIsDone = _isTaskDoneForDate(data, _selectedDate);
     final initialIsRecurringDaily =
         (data['isRecurringDaily'] as bool?) ?? false;
     final dateKey = (data['dateKey'] as String?) ?? '-';
@@ -1222,6 +1501,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         ? TimeOfDay(hour: initialReminderHour, minute: initialReminderMinute)
         : null;
     final initialHasReminder = initialReminderTime != null;
+    final initialReminderSuperImportant =
+        (data['reminderSuperImportant'] as bool?) ?? false;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1233,7 +1514,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
       builder: (context) {
         var isDeleting = false;
         var displayedChecklist = List<_TaskChecklistItem>.from(initialChecklist);
-        var displayedIsDone = initialIsDone;
 
         return StatefulBuilder(
           builder: (context, setSheetState) {
@@ -1254,7 +1534,9 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                         children: [
                           Expanded(
                             child: Text(
-                              'Task detail',
+                              initialIsRecurringDaily
+                                  ? 'Daily streak'
+                                  : 'Task detail',
                               style: Theme.of(context).textTheme.titleLarge,
                             ),
                           ),
@@ -1280,12 +1562,15 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                     initialIsRecurringDaily: initialIsRecurringDaily,
                                     initialHasReminder: initialHasReminder,
                                     initialReminderTime: initialReminderTime,
+                                    initialReminderSuperImportant:
+                                        initialReminderSuperImportant,
                                     onSave: ({
                                       required String title,
                                       required List<String> checklistTexts,
                                       required bool isRecurringDaily,
                                       required bool hasReminder,
                                       TimeOfDay? reminderTime,
+                                      required bool reminderSuperImportant,
                                     }) async {
                                       final normalizedChecklist =
                                           _normalizeChecklistTexts(checklistTexts);
@@ -1351,6 +1636,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                             Timestamp.fromDate(
                                                 remindAt.toUtc());
                                         updateData['reminderPending'] = true;
+                                        updateData['reminderSuperImportant'] =
+                                            reminderSuperImportant;
                                       } else {
                                         updateData['reminderHour'] =
                                             FieldValue.delete();
@@ -1359,6 +1646,8 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                         updateData['remindAt'] =
                                             FieldValue.delete();
                                         updateData['reminderPending'] = false;
+                                        updateData['reminderSuperImportant'] =
+                                            FieldValue.delete();
                                       }
                                       if (!isRecurringDaily) {
                                         final nd =
@@ -1367,6 +1656,19 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                           updateData['completedOnDayKey'] =
                                               FieldValue.delete();
                                         }
+                                      }
+                                      if (hasReminder &&
+                                          reminderTime != null &&
+                                          _useServerPushReminders &&
+                                          !kIsWeb &&
+                                          context.mounted) {
+                                        await PushNotificationService.instance
+                                            .showRationaleAndRequestPush(
+                                          context,
+                                          title: 'Task reminders',
+                                          message:
+                                              'Allow notifications so this device can receive reminders when your tasks are due.',
+                                        );
                                       }
                                       if (firestoreDoc != null) {
                                         await firestoreDoc.reference
@@ -1396,8 +1698,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                       const SizedBox(height: 8),
                       Builder(
                         builder: (sheetContext) {
-                          final hasChecklist = displayedChecklist.isNotEmpty;
-                          final showTimer = hasChecklist ||
+                          final showTimer =
                               taskTitleSuggestsDuration(initialTitle);
                           final parsedMin =
                               parseMinutesFromTaskTitle(initialTitle);
@@ -1452,12 +1753,41 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                           ...displayedChecklist.asMap().entries.map((entry) {
                             final index = entry.key;
                             final item = entry.value;
+                            final itemMinutes =
+                                parseMinutesFromTaskTitle(item.text);
                             return CheckboxListTile(
                               value: item.isDone,
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               controlAffinity: ListTileControlAffinity.leading,
                               title: Text(item.text),
+                              secondary: itemMinutes == null
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'Timer ($itemMinutes min)',
+                                      icon: Icon(
+                                        Icons.timer_outlined,
+                                        size: 20,
+                                        color: Colors.indigo.shade700,
+                                      ),
+                                      onPressed: () {
+                                        final nav = Navigator.of(context);
+                                        nav.pop();
+                                        nav.push<void>(
+                                          MaterialPageRoute<void>(
+                                            builder: (context) => TaskTimerPage(
+                                              taskTitle: item.text,
+                                              initialDuration: Duration(
+                                                minutes: itemMinutes.clamp(
+                                                  1,
+                                                  24 * 60,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
                               onChanged: (value) async {
                                 final newValue = value ?? false;
                                 if (context.mounted) {
@@ -1467,8 +1797,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                       text: item.text,
                                       isDone: newValue,
                                     );
-                                    displayedIsDone = displayedChecklist
-                                        .every((e) => e.isDone);
                                   });
                                 }
                                 try {
@@ -1493,8 +1821,6 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                                         text: item.text,
                                         isDone: !newValue,
                                       );
-                                      displayedIsDone = displayedChecklist
-                                          .every((e) => e.isDone);
                                     });
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
@@ -1509,36 +1835,20 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                             );
                           }),
                         ],
-                      const SizedBox(height: 16),
-                      Text('Date: $dateKey'),
-                      Text(
-                        initialIsRecurringDaily
-                            ? 'Recurring: Daily'
-                            : 'Recurring: No',
-                      ),
-                      Text(
-                        initialReminderTime == null
-                            ? 'Reminder: Off'
-                            : 'Reminder: ${initialReminderTime.format(context)}',
-                      ),
-                      Text(displayedIsDone ? 'Status: Done' : 'Status: Not done'),
+                      if (initialIsRecurringDaily) ...[
+                        const SizedBox(height: 14),
+                        _buildDailyStreakRow(data),
+                      ],
                       const SizedBox(height: 16),
                       SizedBox(
                           width: double.infinity,
                           child: FilledButton(
                             onPressed: () {
-                              if (firestoreDoc != null) {
-                                _toggleTask(firestoreDoc, !initialIsDone);
-                              } else {
-                                unawaited(_toggleTaskById(taskId, !initialIsDone));
-                              }
                               if (context.mounted) {
                                 Navigator.of(context).pop();
                               }
                             },
-                            child: Text(
-                              initialIsDone ? 'Mark as undone' : 'Mark as done',
-                            ),
+                            child: const Text('Close'),
                           ),
                         ),
                       const SizedBox(height: 8),
@@ -2390,11 +2700,14 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                 if (value && _desktopReminderTime == null) {
                   _desktopReminderTime = const TimeOfDay(hour: 9, minute: 0);
                 }
+                if (!value) {
+                  _desktopReminderSuperImportant = false;
+                }
               });
             },
             title: const Text('Add reminder'),
           ),
-          if (_desktopHasReminder)
+          if (_desktopHasReminder) ...[
             Padding(
               padding: const EdgeInsets.only(left: 8, bottom: 10),
               child: Row(
@@ -2441,6 +2754,28 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                 ],
               ),
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _desktopReminderSuperImportant,
+              activeThumbColor: const Color(0xFF111111),
+              onChanged: (value) {
+                setState(() {
+                  _desktopReminderSuperImportant = value;
+                  if (value) {
+                    _desktopHasReminder = true;
+                    _desktopReminderTime ??= const TimeOfDay(hour: 9, minute: 0);
+                  }
+                });
+              },
+              title: const Text('Super important reminder'),
+              subtitle: Text(
+                _desktopHasReminder
+                    ? 'Android: max importance & alarm-style sound.'
+                    : 'Turning this on also enables Add reminder.',
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           FilledButton(
             onPressed: _createTaskFromDesktopPanel,
@@ -2634,6 +2969,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         await prefs.clear();
       } catch (_) {}
     }
+    await signOutGoogleSilently();
     await FirebaseAuth.instance.signOut();
   }
 
@@ -2697,6 +3033,15 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                     ),
                   ],
                 );
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.logout_rounded, color: Colors.grey.shade700),
+              title: const Text('Log out'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _showLogoutDialog(context);
               },
             ),
           ],
@@ -3218,12 +3563,122 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                         color: Colors.grey.shade700,
                       ),
                     );
+                    final aiRaw = data['aiReflection'];
+                    final Map<String, dynamic>? aiMap = aiRaw is Map<String, dynamic>
+                        ? aiRaw
+                        : (aiRaw is Map ? Map<String, dynamic>.from(aiRaw) : null);
+                    final hasAiFeedback = aiMap != null &&
+                        ((aiMap['affirmation'] is String &&
+                                (aiMap['affirmation'] as String).trim().isNotEmpty) ||
+                            (aiMap['advice'] is String &&
+                                (aiMap['advice'] as String).trim().isNotEmpty));
+                    final isAiUnread = hasAiFeedback &&
+                        aiMap['readAt'] == null &&
+                        aiMap['readAtMillis'] == null;
+                    final aiCharacterId = () {
+                      final raw = aiMap?['character'];
+                      if (raw is String) {
+                        final t = raw.trim();
+                        if (t.isNotEmpty &&
+                            kJournalAiCharacterIds.contains(t)) {
+                          return t;
+                        }
+                      }
+                      return 'default';
+                    }();
+                    final Widget? journalAiReplySlot = hasAiFeedback
+                        ? SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              alignment: Alignment.center,
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isAiUnread
+                                        ? const Color(0xFFEDEBFF)
+                                        : Colors.grey.shade100,
+                                    border: Border.all(
+                                      color: isAiUnread
+                                          ? Colors.indigo.shade200
+                                          : Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  alignment: Alignment.center,
+                                  child: JournalAiCharacterAvatar(
+                                    characterId: aiCharacterId,
+                                    size: 36,
+                                    iconColor: Colors.indigo.shade700,
+                                  ),
+                                ),
+                                if (isAiUnread)
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.shade600,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.12),
+                                            blurRadius: 3,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          )
+                        : null;
                     Widget buildCardContent({Widget? badgeSlot}) => Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () {
+                              onTap: () async {
+                                if (isAiUnread) {
+                                  aiMap['readAt'] = Timestamp.now();
+                                  aiMap['readAtMillis'] =
+                                      DateTime.now().millisecondsSinceEpoch;
+                                  data['aiReflection'] = aiMap;
+                                  if (mounted) setState(() {});
+                                  if (_useHive && _journalStore != null) {
+                                    unawaited(
+                                      _journalStore!.updateJournal(
+                                        entryId,
+                                        <String, dynamic>{
+                                          'aiReflection': aiMap,
+                                          'aiReflection.readAt':
+                                              FieldValue.serverTimestamp(),
+                                        },
+                                      ),
+                                    );
+                                  } else {
+                                    unawaited(
+                                      _journalRef.doc(entryId).update(
+                                        <String, dynamic>{
+                                          'aiReflection.readAt':
+                                              FieldValue.serverTimestamp(),
+                                        },
+                                      ).catchError((_) {}),
+                                    );
+                                  }
+                                }
                                 Navigator.of(context).push<void>(
                                   MaterialPageRoute<void>(
                                     builder: (context) {
@@ -3392,14 +3847,23 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                       key: ValueKey(entryId),
                       child: ReorderableDelayedDragStartListener(
                         index: index,
-                        child: buildCardContent(
-                          badgeSlot: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: showCategoryMenu,
-                              borderRadius: BorderRadius.circular(8),
-                              child: categoryBadge,
-                            ),
+                          child: buildCardContent(
+                          badgeSlot: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (journalAiReplySlot != null) ...[
+                                journalAiReplySlot,
+                                const SizedBox(width: 8),
+                              ],
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: showCategoryMenu,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: categoryBadge,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -3570,16 +4034,13 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
     final now = DateTime.now();
     final pageTitle = _bottomTabIndex == 0
         ? '${_shortMonthName(_selectedDate.month)} ${_selectedDate.day} · ${_weekdayShortLabel(_selectedDate)}'
-        : (_bottomTabIndex == 1 ? 'Mistakes' : 'Journal');
+        : 'Journal';
     final pageSubtitle = _bottomTabIndex == 0
         ? 'Plan with clarity'
-        : (_bottomTabIndex == 1
-              ? 'Record and learn from mistakes'
-              : 'Notes and reflections');
+        : 'Notes and reflections';
 
-    final showSettingsDrawer = _bottomTabIndex != 1 &&
-        !kIsWeb &&
-        defaultTargetPlatform == TargetPlatform.android;
+    final showSettingsDrawer = !kIsWeb;
+    final showWebSettingsMenu = kIsWeb;
     final appBar = AppBar(
       toolbarHeight: 72,
       flexibleSpace: const LiquidGlassAppBarBackground(),
@@ -3599,7 +4060,95 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
                   },
                 ),
               )
-            : null,
+            : showWebSettingsMenu
+                ? Builder(
+                    builder: (menuAnchorContext) {
+                      return PopupMenuButton<int>(
+                        tooltip: 'Settings',
+                        icon: const Icon(Icons.settings_outlined),
+                        onSelected: (v) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!menuAnchorContext.mounted) return;
+                            switch (v) {
+                              case 1:
+                                Navigator.of(menuAnchorContext).push<void>(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) =>
+                                        const NotificationSettingsPage(),
+                                  ),
+                                );
+                              case 2:
+                                Navigator.of(menuAnchorContext).push<void>(
+                                  MaterialPageRoute<void>(
+                                    builder: (context) =>
+                                        const JournalPersonalizationPage(),
+                                  ),
+                                );
+                              case 3:
+                                showAboutDialog(
+                                  context: menuAnchorContext,
+                                  applicationName: 'Simple Todo',
+                                  applicationVersion: '1.0.1+3',
+                                  applicationLegalese:
+                                      '© ${DateTime.now().year}',
+                                  children: const [
+                                    SizedBox(height: 16),
+                                    Text(
+                                      'Plan tasks, reflect on mistakes, and keep '
+                                      'a journal — in one place.',
+                                    ),
+                                  ],
+                                );
+                              case 4:
+                                _showLogoutDialog(menuAnchorContext);
+                              default:
+                                break;
+                            }
+                          });
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem<int>(
+                            value: 1,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.notifications_outlined),
+                              title: Text('Set notification'),
+                            ),
+                          ),
+                          const PopupMenuItem<int>(
+                            value: 2,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.edit_note_outlined),
+                              title: Text('Journal AI notes'),
+                              subtitle: Text('パーソナライズ用のメモ'),
+                            ),
+                          ),
+                          const PopupMenuItem<int>(
+                            value: 3,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(Icons.info_outline_rounded),
+                              title: Text('About us'),
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          PopupMenuItem<int>(
+                            value: 4,
+                            child: ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                Icons.logout_rounded,
+                                color: Colors.grey.shade700,
+                              ),
+                              title: const Text('Log out'),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  )
+                : null,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3618,43 +4167,72 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
           ],
         ),
         actions: [
-          if (widget.user.email != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Center(
-                child: InkWell(
-                  onTap: () => _showLogoutDialog(context),
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Center(
+              child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('todo')
+                    .doc(widget.user.uid)
+                    .snapshots(),
+                builder: (context, snap) {
+                  final coins =
+                      (snap.data?.data()?['taskCoins'] as num?)?.toInt() ?? 0;
+                  return Material(
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFE7EAF0)),
+                      side: const BorderSide(color: Color(0xFFE7EAF0)),
                     ),
-                    child: Text(
-                      widget.user.email!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: const Color(0xFF616A7C),
-                        fontWeight: FontWeight.w500,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () {
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (context) =>
+                                const JournalCharacterShopPage(),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(999),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.toll_rounded,
+                              size: 20,
+                              color: Colors.amber.shade800,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '$coins',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF3D4451),
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
+          ),
         ],
     );
     return Scaffold(
       extendBodyBehindAppBar: true,
-      drawer: _bottomTabIndex == 1
-          ? _buildAnalysisHistoryDrawer()
-          : showSettingsDrawer
-              ? _buildSettingsDrawer()
-              : null,
+      drawer: showSettingsDrawer ? _buildSettingsDrawer() : null,
       appBar: appBar,
       body: Padding(
         padding: EdgeInsets.only(
@@ -3662,9 +4240,7 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
         ),
         child: _bottomTabIndex == 0
             ? _buildTodoTabBody(isDesktopWeb: isDesktopWeb, now: now)
-            : (_bottomTabIndex == 1
-                  ? _buildMistakesTabBody()
-                  : _buildJournalTabBody()),
+            : _buildJournalTabBody(),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _bottomTabIndex,
@@ -3679,117 +4255,68 @@ class _TodoHomePageState extends State<TodoHomePage> with WidgetsBindingObserver
             label: 'Todo',
           ),
           NavigationDestination(
-            icon: Icon(Icons.warning_amber_rounded),
-            label: 'Mistakes',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.book_outlined),
             label: 'Journal',
           ),
         ],
       ),
-      floatingActionButton: (!isDesktopWeb)
-          ? (_bottomTabIndex == 0
-                ? FloatingActionButton(
-                    heroTag: 'add_task',
-                    onPressed: _addTask,
-                    tooltip: 'Add task',
-                    backgroundColor: const Color(0xFF111111),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(Icons.add),
-                  )
-                : (_bottomTabIndex == 1
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            FloatingActionButton(
-                              heroTag: 'mistakes_ai',
-                              onPressed: () {
-                                if (_isAnalyzingMistakes) return;
-                                if (!_mistakeSelectionMode) {
-                                  setState(() {
-                                    _mistakeSelectionMode = true;
-                                    _selectedMistakeIds.clear();
-                                  });
-                                  return;
-                                }
-                                if (_selectedMistakeIds.length > 1) {
-                                  _analyzeSelectedMistakes();
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Select at least two mistakes to send to AI.',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              tooltip: _mistakeSelectionMode
-                                  ? 'Send to AI'
-                                  : 'Analyze mistakes',
-                              backgroundColor: const Color(0xFF111111),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Icon(
-                                _mistakeSelectionMode
-                                    ? Icons.auto_awesome
-                                    : Icons.psychology_alt_rounded,
-                              ),
+      floatingActionButton: isDesktopWeb
+          ? (_bottomTabIndex == 1
+              ? FloatingActionButton(
+                  heroTag: 'journal_add_desktop',
+                  onPressed: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (context) => AddJournalEntryPage(
+                          journalRef: _journalRef,
+                          journalStore: _useHive ? _journalStore : null,
+                        ),
+                      ),
+                    );
+                  },
+                  tooltip: 'New journal entry',
+                  backgroundColor: const Color(0xFF111111),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.add),
+                )
+              : null)
+          : (_bottomTabIndex == 0
+              ? FloatingActionButton(
+                  heroTag: 'add_task',
+                  onPressed: _addTask,
+                  tooltip: 'Add task',
+                  backgroundColor: const Color(0xFF111111),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.add),
+                )
+              : (_bottomTabIndex == 1
+                  ? FloatingActionButton(
+                      heroTag: 'journal_add',
+                      onPressed: () {
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (context) => AddJournalEntryPage(
+                              journalRef: _journalRef,
+                              journalStore: _useHive ? _journalStore : null,
                             ),
-                            const SizedBox(height: 12),
-                            FloatingActionButton(
-                              heroTag: 'add_mistake',
-                              onPressed: () {
-                                Navigator.of(context).push<void>(
-                                  MaterialPageRoute<void>(
-                                    builder: (context) => AddMistakePage(
-                                      mistakesRef: _mistakesRef,
-                                    ),
-                                  ),
-                                );
-                              },
-                              tooltip: 'Add mistake',
-                              backgroundColor: const Color(0xFF111111),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: const Icon(Icons.add),
-                            ),
-                          ],
-                        )
-                      : (_bottomTabIndex == 2
-                            ? FloatingActionButton(
-                                heroTag: 'journal_add',
-                                onPressed: () {
-                                  Navigator.of(context).push<void>(
-                                    MaterialPageRoute<void>(
-                                      builder: (context) =>
-                                          AddJournalEntryPage(
-                                        journalRef: _journalRef,
-                                        journalStore:
-                                            _useHive ? _journalStore : null,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                tooltip: 'New journal entry',
-                                backgroundColor: const Color(0xFF111111),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: const Icon(Icons.add),
-                              )
-                            : null)))
-          : null,
+                          ),
+                        );
+                      },
+                      tooltip: 'New journal entry',
+                      backgroundColor: const Color(0xFF111111),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(Icons.add),
+                    )
+                  : null)),
     );
   }
 }

@@ -1,0 +1,23 @@
+name: simpletodo_data
+description: Local task/journal data layer — Isar on IO, Firestore-only stubs on web.
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cloud_firestore: ^5.6.7
+  path_provider: ^2.1.5
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  isar_generator: ^3.1.0+1
+
+dependency_overrides:
+  sqflite_android: 2.4.1

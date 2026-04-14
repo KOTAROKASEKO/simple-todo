@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:simpletodo/pages/login_page.dart';
+import 'package:simpletodo/pages/intro_onboarding_page.dart';
 import 'package:simpletodo/pages/todo_home_page.dart';
 import 'package:simpletodo/widgets/auth_loading_shimmer.dart';
 
@@ -37,7 +37,7 @@ class AuthGate extends StatelessWidget {
           return const AuthLoadingShimmer();
         }
 
-        return const LoginPage();
+        return const IntroOnboardingPage();
       },
     );
   }

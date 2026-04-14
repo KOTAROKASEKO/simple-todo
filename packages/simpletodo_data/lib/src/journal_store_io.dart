@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:isar/isar.dart';
-import 'package:simpletodo/models/journal_doc.dart';
-import 'package:simpletodo/services/app_isar.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:isar/isar.dart';
+
+import 'isar/app_isar_io.dart';
+import 'isar/journal_doc.dart';
+import 'journal_local_store.dart';
+import 'models/local_journal_entry.dart';
 
 /// Clears shared app Isar (tasks + journals) on sign-out.
 Future<void> clearJournalIsarOnLogout() => clearAppIsarOnLogout();
@@ -82,6 +85,7 @@ Map<String, dynamic> _aiReflectionMapForJson(Map<String, dynamic> raw) {
   putStr('message');
   putStr('reflection');
   putStr('body');
+  putStr('character');
 
   final gen = raw['generatedAt'];
   if (gen is Timestamp) {
@@ -94,49 +98,17 @@ Map<String, dynamic> _aiReflectionMapForJson(Map<String, dynamic> raw) {
   if (via is String && via.isNotEmpty) {
     out['deliveredVia'] = via;
   }
-  return out;
-}
-
-/// In-memory journal row read from [JournalDoc].
-class LocalJournalEntry {
-  const LocalJournalEntry({
-    required this.id,
-    required this.content,
-    required this.category,
-    required this.sortOrder,
-    this.createdAtMillis,
-    this.imagePaths,
-    this.imagePathLegacy,
-    this.aiReflection,
-    required this.journalAiFeedbackRequested,
-  });
-
-  final String id;
-  final String content;
-  final String category;
-  final double sortOrder;
-  final int? createdAtMillis;
-  final List<String>? imagePaths;
-  final String? imagePathLegacy;
-  final Map<String, dynamic>? aiReflection;
-  final bool journalAiFeedbackRequested;
-
-  /// Map shaped like Firestore data for existing journal UI helpers.
-  Map<String, dynamic> toUiMap() {
-    return <String, dynamic>{
-      'content': content,
-      'category': category,
-      'order': sortOrder,
-      'createdAt': createdAtMillis != null
-          ? Timestamp.fromMillisecondsSinceEpoch(createdAtMillis!)
-          : null,
-      if (imagePaths != null && imagePaths!.isNotEmpty) 'imagePaths': imagePaths,
-      if (imagePathLegacy != null && imagePathLegacy!.isNotEmpty)
-        'imagePath': imagePathLegacy,
-      if (aiReflection != null) 'aiReflection': aiReflection,
-      'journalAiFeedbackRequested': journalAiFeedbackRequested,
-    };
+  final readAt = raw['readAt'];
+  if (readAt is Timestamp) {
+    out['readAtMillis'] = readAt.millisecondsSinceEpoch;
+  } else if (readAt is int) {
+    out['readAtMillis'] = readAt;
   }
+  final readAtMillis = raw['readAtMillis'];
+  if (readAtMillis is int) {
+    out['readAtMillis'] = readAtMillis;
+  }
+  return out;
 }
 
 LocalJournalEntry _localJournalFromDoc(JournalDoc d) {
@@ -168,7 +140,7 @@ LocalJournalEntry _localJournalFromDoc(JournalDoc d) {
 }
 
 /// Mobile: Isar primary; Firestore [snapshots] merges into Isar (same idea as [TaskStore]).
-class JournalStore {
+class JournalStore implements JournalLocalStore {
   JournalStore({required this.journalRef});
 
   final CollectionReference<Map<String, dynamic>> journalRef;
@@ -293,6 +265,34 @@ class JournalStore {
     if (updateData.containsKey('category')) {
       final c = (updateData['category'] as String?) ?? 'diary';
       row.category = c.toLowerCase();
+    }
+    if (updateData.containsKey('aiReflection')) {
+      final raw = updateData['aiReflection'];
+      if (raw is Map) {
+        final safe = _aiReflectionMapForJson(
+          Map<String, dynamic>.from(raw.map((k, v) => MapEntry(k.toString(), v))),
+        );
+        row.aiReflectionJson = safe.isEmpty ? null : jsonEncode(safe);
+      }
+    }
+    if (updateData.containsKey('aiReflection.readAt')) {
+      Map<String, dynamic> existing = <String, dynamic>{};
+      if (row.aiReflectionJson != null && row.aiReflectionJson!.isNotEmpty) {
+        final raw = jsonDecode(row.aiReflectionJson!);
+        if (raw is Map) {
+          existing = Map<String, dynamic>.from(raw);
+        }
+      }
+      final readAt = updateData['aiReflection.readAt'];
+      if (readAt is Timestamp) {
+        existing['readAtMillis'] = readAt.millisecondsSinceEpoch;
+      } else if (readAt is int) {
+        existing['readAtMillis'] = readAt;
+      } else {
+        existing['readAtMillis'] = DateTime.now().millisecondsSinceEpoch;
+      }
+      final safe = _aiReflectionMapForJson(existing);
+      row.aiReflectionJson = safe.isEmpty ? null : jsonEncode(safe);
     }
 
     await isar.writeTxn(() async {

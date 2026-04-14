@@ -4,53 +4,12 @@ import 'dart:developer' show log;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:isar/isar.dart';
-import 'package:simpletodo/models/task_doc.dart';
-import 'package:simpletodo/models/task_model.dart';
-import 'package:simpletodo/services/app_isar.dart';
 
-bool _isFieldValueDelete(Object? v) =>
-    v.toString().contains('FieldValue');
-
-/// Converts [updateData] for [DocumentReference.update].
-///
-/// Firestore [set] with merge incorrectly merges each element of an array of
-/// maps (e.g. checklist), so updates must use [update] for full field replace.
-///
-/// [doneByDate] and [checklistDoneByDate] are flattened to dotted paths so one
-/// day's value merges into the existing map instead of replacing the whole map.
-Map<String, dynamic> flattenFirestoreUpdateData(
-  Map<String, dynamic> updateData,
-) {
-  final out = <String, dynamic>{};
-  for (final e in updateData.entries) {
-    final k = e.key;
-    final v = e.value;
-    if (k == 'doneByDate') {
-      if (_isFieldValueDelete(v)) {
-        out['doneByDate'] = FieldValue.delete();
-      } else if (v is Map) {
-        for (final de in v.entries) {
-          out['doneByDate.${de.key}'] = de.value;
-        }
-      } else {
-        out[k] = v;
-      }
-    } else if (k == 'checklistDoneByDate') {
-      if (_isFieldValueDelete(v)) {
-        out['checklistDoneByDate'] = FieldValue.delete();
-      } else if (v is Map) {
-        for (final de in v.entries) {
-          out['checklistDoneByDate.${de.key}'] = de.value;
-        }
-      } else {
-        out[k] = v;
-      }
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
+import 'firestore_update_utils.dart';
+import 'isar/app_isar_io.dart';
+import 'isar/task_doc.dart';
+import 'models/local_task.dart';
+import 'task_local_store.dart';
 
 /// Clears shared app Isar (tasks + journals) on sign-out.
 Future<void> clearTaskIsarOnLogout() => clearAppIsarOnLogout();
@@ -136,6 +95,8 @@ TaskDoc _taskDocFromFirestore(String docId, Map<String, dynamic> data) {
     createdAtMillis = createdAt.millisecondsSinceEpoch;
   }
 
+  final streakDay = (data['recurringStreakRewardDay'] as num?)?.toInt() ?? 1;
+
   return TaskDoc()
     ..docKey = docId
     ..title = (data['title'] as String?) ?? 'Untitled'
@@ -150,8 +111,14 @@ TaskDoc _taskDocFromFirestore(String docId, Map<String, dynamic> data) {
     ..reminderMinute = data['reminderMinute'] as int?
     ..remindAtMillis = remindAtMillis
     ..reminderPending = (data['reminderPending'] as bool?) ?? false
+    ..reminderSuperImportant =
+        (data['reminderSuperImportant'] as bool?) ?? false
     ..doneByDateJson = _encodeBoolMap(doneByDate)
-    ..checklistDoneByDateJson = _encodeChecklistDoneByDate(checklistDoneByDate);
+    ..checklistDoneByDateJson = _encodeChecklistDoneByDate(checklistDoneByDate)
+    ..recurringStreakRewardDay = streakDay.clamp(1, 7)
+    ..recurringStreakLastPaidDayKey =
+        data['recurringStreakLastPaidDayKey'] as String?
+    ..lastTaskRewardDayKey = data['lastTaskRewardDayKey'] as String?;
 }
 
 LocalTask _localTaskFromDoc(TaskDoc d) {
@@ -174,8 +141,12 @@ LocalTask _localTaskFromDoc(TaskDoc d) {
     reminderMinute: d.reminderMinute,
     remindAtMillis: d.remindAtMillis,
     reminderPending: d.reminderPending,
+    reminderSuperImportant: d.reminderSuperImportant,
     doneByDate: _decodeDoneByDate(d.doneByDateJson),
     checklistDoneByDate: _decodeChecklistDoneByDate(d.checklistDoneByDateJson),
+    recurringStreakRewardDay: d.recurringStreakRewardDay,
+    recurringStreakLastPaidDayKey: d.recurringStreakLastPaidDayKey,
+    lastTaskRewardDayKey: d.lastTaskRewardDayKey,
   );
 }
 
@@ -200,15 +171,19 @@ TaskDoc _taskDocFromLocal(LocalTask t) {
     ..reminderMinute = t.reminderMinute
     ..remindAtMillis = t.remindAtMillis
     ..reminderPending = t.reminderPending
+    ..reminderSuperImportant = t.reminderSuperImportant
     ..doneByDateJson = _encodeBoolMap(t.doneByDate)
     ..checklistDoneByDateJson = _encodeChecklistDoneByDate(
       t.checklistDoneByDate,
-    );
+    )
+    ..recurringStreakRewardDay = t.recurringStreakRewardDay
+    ..recurringStreakLastPaidDayKey = t.recurringStreakLastPaidDayKey
+    ..lastTaskRewardDayKey = t.lastTaskRewardDayKey;
 }
 
 /// Mobile: Isar as primary store; Firestore `snapshots()` runs in parallel and
 /// merges server state into Isar. Writes update Isar first where applicable.
-class TaskStore {
+class TaskStore implements TaskLocalStore {
   TaskStore({
     required this.userId,
     required this.tasksRef,
@@ -250,10 +225,6 @@ class TaskStore {
     if (isar == null) return;
 
     await isar.writeTxn(() async {
-      // Use docChanges so we only remove rows when Firestore reports a real
-      // removal. Mirroring `snap.docs` used to delete tasks whenever a document
-      // was missing from one query emission (e.g. brief inconsistency), which
-      // made daily tasks "vanish" after toggling done.
       if (snap.docChanges.isEmpty) {
         for (final doc in snap.docs) {
           await _upsertFirestoreDoc(isar, doc.id, doc.data());
@@ -447,25 +418,25 @@ class TaskStore {
   void _applyUpdateToTask(LocalTask task, Map<String, dynamic> updateData) {
     if (updateData.containsKey('title')) {
       final v = updateData['title'];
-      if (!_isFieldValueDelete(v)) {
+      if (!isFirestoreFieldValueDelete(v)) {
         task.title = v as String;
       }
     }
     if (updateData.containsKey('isDone')) {
       final v = updateData['isDone'];
-      if (!_isFieldValueDelete(v)) {
+      if (!isFirestoreFieldValueDelete(v)) {
         task.isDone = v as bool;
       }
     }
     if (updateData.containsKey('isRecurringDaily')) {
       final v = updateData['isRecurringDaily'];
-      if (!_isFieldValueDelete(v)) {
+      if (!isFirestoreFieldValueDelete(v)) {
         task.isRecurringDaily = v as bool;
       }
     }
     if (updateData.containsKey('checklist')) {
       final raw = updateData['checklist'];
-      if (_isFieldValueDelete(raw)) {
+      if (isFirestoreFieldValueDelete(raw)) {
         task.checklist = null;
       } else if (raw is List) {
         task.checklist = raw.map((e) {
@@ -481,7 +452,7 @@ class TaskStore {
     }
     if (updateData.containsKey('doneByDate')) {
       final raw = updateData['doneByDate'];
-      if (_isFieldValueDelete(raw)) {
+      if (isFirestoreFieldValueDelete(raw)) {
         task.doneByDate = null;
       } else if (raw is Map) {
         final merged = Map<String, bool>.from(task.doneByDate ?? {});
@@ -493,7 +464,7 @@ class TaskStore {
     }
     if (updateData.containsKey('checklistDoneByDate')) {
       final raw = updateData['checklistDoneByDate'];
-      if (_isFieldValueDelete(raw)) {
+      if (isFirestoreFieldValueDelete(raw)) {
         task.checklistDoneByDate = null;
       } else if (raw is Map) {
         task.checklistDoneByDate ??= {};
@@ -509,27 +480,50 @@ class TaskStore {
     if (updateData.containsKey('completedOnDayKey')) {
       final v = updateData['completedOnDayKey'];
       task.completedOnDayKey =
-          _isFieldValueDelete(v) ? null : v as String?;
+          isFirestoreFieldValueDelete(v) ? null : v as String?;
     }
     if (updateData.containsKey('reminderHour')) {
       final v = updateData['reminderHour'];
-      task.reminderHour = _isFieldValueDelete(v) ? null : v as int?;
+      task.reminderHour = isFirestoreFieldValueDelete(v) ? null : v as int?;
     }
     if (updateData.containsKey('reminderMinute')) {
       final v = updateData['reminderMinute'];
-      task.reminderMinute = _isFieldValueDelete(v) ? null : v as int?;
+      task.reminderMinute = isFirestoreFieldValueDelete(v) ? null : v as int?;
     }
     if (updateData.containsKey('remindAt')) {
       final v = updateData['remindAt'];
-      task.remindAtMillis = _isFieldValueDelete(v)
+      task.remindAtMillis = isFirestoreFieldValueDelete(v)
           ? null
           : (v is Timestamp ? v.millisecondsSinceEpoch : null);
     }
     if (updateData.containsKey('reminderPending')) {
       final v = updateData['reminderPending'];
-      if (!_isFieldValueDelete(v)) {
+      if (!isFirestoreFieldValueDelete(v)) {
         task.reminderPending = v as bool;
       }
+    }
+    if (updateData.containsKey('reminderSuperImportant')) {
+      final v = updateData['reminderSuperImportant'];
+      task.reminderSuperImportant = isFirestoreFieldValueDelete(v)
+          ? false
+          : (v as bool?) ?? false;
+    }
+    if (updateData.containsKey('recurringStreakRewardDay')) {
+      final v = updateData['recurringStreakRewardDay'];
+      if (!isFirestoreFieldValueDelete(v)) {
+        task.recurringStreakRewardDay =
+            ((v as num?)?.toInt() ?? 1).clamp(1, 7);
+      }
+    }
+    if (updateData.containsKey('recurringStreakLastPaidDayKey')) {
+      final v = updateData['recurringStreakLastPaidDayKey'];
+      task.recurringStreakLastPaidDayKey =
+          isFirestoreFieldValueDelete(v) ? null : v as String?;
+    }
+    if (updateData.containsKey('lastTaskRewardDayKey')) {
+      final v = updateData['lastTaskRewardDayKey'];
+      task.lastTaskRewardDayKey =
+          isFirestoreFieldValueDelete(v) ? null : v as String?;
     }
   }
 
@@ -555,8 +549,12 @@ class TaskStore {
           ? Timestamp.fromMillisecondsSinceEpoch(task.remindAtMillis!)
           : null,
       'reminderPending': task.reminderPending,
+      'reminderSuperImportant': task.reminderSuperImportant,
       'doneByDate': task.doneByDate,
       'checklistDoneByDate': task.checklistDoneByDate,
+      'recurringStreakRewardDay': task.recurringStreakRewardDay,
+      'recurringStreakLastPaidDayKey': task.recurringStreakLastPaidDayKey,
+      'lastTaskRewardDayKey': task.lastTaskRewardDayKey,
     };
   }
 }

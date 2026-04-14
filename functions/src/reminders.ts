@@ -57,12 +57,30 @@ export const sendDueTaskReminders = onSchedule(
         continue;
       }
 
-      const title = data.title ?? "Task";
+      const taskTitle =
+        String(data.title ?? "Task").trim() || "Task";
       const sendResult = await messaging.sendEachForMulticast({
         tokens,
         notification: {
-          title: "Task Reminder",
-          body: title,
+          title: taskTitle,
+          body: "Reminder",
+        },
+        android: {
+          notification: {
+            title: taskTitle,
+            body: "Reminder",
+            channelId: "task_reminders",
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              alert: {
+                title: taskTitle,
+                body: "Reminder",
+              },
+            },
+          },
         },
         data: {
           taskPath: taskRef.path,

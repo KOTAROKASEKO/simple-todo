@@ -2,7 +2,14 @@ import * as admin from "firebase-admin";
 import * as functions from "firebase-functions/v1";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {logger} from "firebase-functions";
-import {generateJournalReflection} from "./journal_reflection_ai";
+import {
+  journalSurpriseNotificationLead,
+  journalSurpriseNotificationTitle,
+} from "./journal_character_voice";
+import {
+  generateJournalReflection,
+  JournalRecentHistoryItem,
+} from "./journal_reflection_ai";
 
 /**
  * Journal “surprise” AI comments — product rules:
@@ -16,9 +23,10 @@ import {generateJournalReflection} from "./journal_reflection_ai";
 
 /** Server-only queue for “surprise” journal AI feedback (unpredictable timing). */
 const PENDING_COLLECTION = "journal_ai_pending";
+const MAX_RECENT_HISTORY_ITEMS = 3;
 
 /** Chance (0–1) this post gets any AI comment at all; rest get none. */
-const JOURNAL_AI_PICKUP_PROBABILITY = 0.35;
+const JOURNAL_AI_PICKUP_PROBABILITY = 0.5;
 
 /** If picked, delay from post time until we generate & deliver (one of these, uniform). */
 const DELAY_MS_CHOICES = [
@@ -93,6 +101,33 @@ export const deliverRandomJournalAiFeedback = onSchedule(
     timeoutSeconds: 120,
   },
   async () => {
+    const toRecentHistory = (
+      raw: unknown,
+    ): JournalRecentHistoryItem[] => {
+      if (!Array.isArray(raw)) return [];
+      const out: JournalRecentHistoryItem[] = [];
+      for (const row of raw) {
+        if (typeof row !== "object" || row == null) continue;
+        const obj = row as Record<string, unknown>;
+        const summary = (obj.summary ?? "").toString().trim();
+        if (!summary) continue;
+        const createdAtMillisRaw = obj.createdAtMillis;
+        const createdAtMillis =
+          typeof createdAtMillisRaw === "number" &&
+          Number.isFinite(createdAtMillisRaw)
+            ? createdAtMillisRaw
+            : Date.now();
+        const categoryRaw = obj.category;
+        const category =
+          typeof categoryRaw === "string" && categoryRaw.trim().length > 0
+            ? categoryRaw.trim()
+            : undefined;
+        out.push({summary, createdAtMillis, category});
+      }
+      out.sort((a, b) => b.createdAtMillis - a.createdAtMillis);
+      return out.slice(0, MAX_RECENT_HISTORY_ITEMS);
+    };
+
     const db = admin.firestore();
     const messaging = admin.messaging();
     const now = admin.firestore.Timestamp.now();
@@ -171,6 +206,20 @@ export const deliverRandomJournalAiFeedback = onSchedule(
     const pRaw = userData.journalPersonalization;
     const journalPersonalization =
       typeof pRaw === "string" ? pRaw : "";
+    const profileRaw = userData.journalImportantProfile;
+    const journalImportantProfile =
+      profileRaw != null && typeof profileRaw === "object"
+        ? (profileRaw as Record<string, unknown>)
+        : null;
+    const characterRaw = userData.journalAiCharacter;
+    const journalAiCharacter =
+      typeof characterRaw === "string" && characterRaw.trim().length > 0
+        ? characterRaw.trim()
+        : "default";
+    const greetRaw = userData.journalDailyReminderGreetingName;
+    const journalUserNickname =
+      typeof greetRaw === "string" ? greetRaw : "";
+    const recentHistory = toRecentHistory(userData.journalRecentConversationHistory);
 
     let affirmation: string;
     let advice: string;
@@ -180,6 +229,10 @@ export const deliverRandomJournalAiFeedback = onSchedule(
         content,
         category,
         journalPersonalization,
+        journalImportantProfile,
+        recentHistory,
+        journalAiCharacter,
+        journalUserNickname,
       );
       affirmation = r.affirmation;
       advice = r.advice;
@@ -194,10 +247,31 @@ export const deliverRandomJournalAiFeedback = onSchedule(
         aiReflection: {
           affirmation,
           advice,
+          character: journalAiCharacter,
           generatedAt: admin.firestore.FieldValue.serverTimestamp(),
           deliveredVia: "surprise_notification",
         },
       },
+      {merge: true},
+    );
+
+    const responseText = [affirmation, advice]
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+      .join("\n\n")
+      .slice(0, 600);
+    const entrySummary = content.slice(0, 180);
+    const historySummary = `User: ${entrySummary}\nAI: ${responseText}`;
+    const newHistoryItem: JournalRecentHistoryItem = {
+      summary: historySummary,
+      createdAtMillis: Date.now(),
+      category: category || undefined,
+    };
+    const mergedHistory = [newHistoryItem, ...recentHistory]
+      .sort((a, b) => b.createdAtMillis - a.createdAtMillis)
+      .slice(0, MAX_RECENT_HISTORY_ITEMS);
+    await db.collection("todo").doc(userId).set(
+      {journalRecentConversationHistory: mergedHistory},
       {merge: true},
     );
 
@@ -220,11 +294,23 @@ export const deliverRandomJournalAiFeedback = onSchedule(
             ? `${advice.slice(0, 140)}…`
             : advice;
 
+      const lead = journalSurpriseNotificationLead(
+        journalAiCharacter,
+        journalUserNickname,
+      );
+      const notifTitle = journalSurpriseNotificationTitle(journalAiCharacter);
+      const bodyCore = [lead, snippet || "開いてみてね"]
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .join("\n\n");
+      const body =
+        bodyCore.length > 320 ? `${bodyCore.slice(0, 317)}…` : bodyCore;
+
       const sendResult = await messaging.sendEachForMulticast({
         tokens,
         notification: {
-          title: "ジャーナルにひとこと",
-          body: snippet || "開いてみてね",
+          title: notifTitle,
+          body: body.length > 0 ? body : "開いてみてね",
         },
         data: {
           type: "journal_ai_feedback",

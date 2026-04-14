@@ -68,28 +68,48 @@ const TaskDocSchema = CollectionSchema(
       name: r'lastResetOn',
       type: IsarType.string,
     ),
-    r'remindAtMillis': PropertySchema(
+    r'lastTaskRewardDayKey': PropertySchema(
       id: 10,
+      name: r'lastTaskRewardDayKey',
+      type: IsarType.string,
+    ),
+    r'recurringStreakLastPaidDayKey': PropertySchema(
+      id: 11,
+      name: r'recurringStreakLastPaidDayKey',
+      type: IsarType.string,
+    ),
+    r'recurringStreakRewardDay': PropertySchema(
+      id: 12,
+      name: r'recurringStreakRewardDay',
+      type: IsarType.long,
+    ),
+    r'remindAtMillis': PropertySchema(
+      id: 13,
       name: r'remindAtMillis',
       type: IsarType.long,
     ),
     r'reminderHour': PropertySchema(
-      id: 11,
+      id: 14,
       name: r'reminderHour',
       type: IsarType.long,
     ),
     r'reminderMinute': PropertySchema(
-      id: 12,
+      id: 15,
       name: r'reminderMinute',
       type: IsarType.long,
     ),
     r'reminderPending': PropertySchema(
-      id: 13,
+      id: 16,
       name: r'reminderPending',
       type: IsarType.bool,
     ),
+    r'reminderSuperImportant': PropertySchema(
+      id: 17,
+      name: r'reminderSuperImportant',
+      type: IsarType.bool,
+    ),
     r'title': PropertySchema(
-      id: 14,
+      id: 18,
       name: r'title',
       type: IsarType.string,
     )
@@ -173,6 +193,18 @@ int _taskDocEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  {
+    final value = object.lastTaskRewardDayKey;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.recurringStreakLastPaidDayKey;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.title.length * 3;
   return bytesCount;
 }
@@ -198,11 +230,15 @@ void _taskDocSerialize(
   writer.writeBool(offsets[7], object.isDone);
   writer.writeBool(offsets[8], object.isRecurringDaily);
   writer.writeString(offsets[9], object.lastResetOn);
-  writer.writeLong(offsets[10], object.remindAtMillis);
-  writer.writeLong(offsets[11], object.reminderHour);
-  writer.writeLong(offsets[12], object.reminderMinute);
-  writer.writeBool(offsets[13], object.reminderPending);
-  writer.writeString(offsets[14], object.title);
+  writer.writeString(offsets[10], object.lastTaskRewardDayKey);
+  writer.writeString(offsets[11], object.recurringStreakLastPaidDayKey);
+  writer.writeLong(offsets[12], object.recurringStreakRewardDay);
+  writer.writeLong(offsets[13], object.remindAtMillis);
+  writer.writeLong(offsets[14], object.reminderHour);
+  writer.writeLong(offsets[15], object.reminderMinute);
+  writer.writeBool(offsets[16], object.reminderPending);
+  writer.writeBool(offsets[17], object.reminderSuperImportant);
+  writer.writeString(offsets[18], object.title);
 }
 
 TaskDoc _taskDocDeserialize(
@@ -228,11 +264,15 @@ TaskDoc _taskDocDeserialize(
   object.isDone = reader.readBool(offsets[7]);
   object.isRecurringDaily = reader.readBool(offsets[8]);
   object.lastResetOn = reader.readStringOrNull(offsets[9]);
-  object.remindAtMillis = reader.readLongOrNull(offsets[10]);
-  object.reminderHour = reader.readLongOrNull(offsets[11]);
-  object.reminderMinute = reader.readLongOrNull(offsets[12]);
-  object.reminderPending = reader.readBool(offsets[13]);
-  object.title = reader.readString(offsets[14]);
+  object.lastTaskRewardDayKey = reader.readStringOrNull(offsets[10]);
+  object.recurringStreakLastPaidDayKey = reader.readStringOrNull(offsets[11]);
+  object.recurringStreakRewardDay = reader.readLong(offsets[12]);
+  object.remindAtMillis = reader.readLongOrNull(offsets[13]);
+  object.reminderHour = reader.readLongOrNull(offsets[14]);
+  object.reminderMinute = reader.readLongOrNull(offsets[15]);
+  object.reminderPending = reader.readBool(offsets[16]);
+  object.reminderSuperImportant = reader.readBool(offsets[17]);
+  object.title = reader.readString(offsets[18]);
   return object;
 }
 
@@ -269,14 +309,22 @@ P _taskDocDeserializeProp<P>(
     case 9:
       return (reader.readStringOrNull(offset)) as P;
     case 10:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 11:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 12:
-      return (reader.readLongOrNull(offset)) as P;
+      return (reader.readLong(offset)) as P;
     case 13:
-      return (reader.readBool(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 14:
+      return (reader.readLongOrNull(offset)) as P;
+    case 15:
+      return (reader.readLongOrNull(offset)) as P;
+    case 16:
+      return (reader.readBool(offset)) as P;
+    case 17:
+      return (reader.readBool(offset)) as P;
+    case 18:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1600,6 +1648,372 @@ extension TaskDocQueryFilter
     });
   }
 
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'lastTaskRewardDayKey',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'lastTaskRewardDayKey',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'lastTaskRewardDayKey',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'lastTaskRewardDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'lastTaskRewardDayKey',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'lastTaskRewardDayKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      lastTaskRewardDayKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'lastTaskRewardDayKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'recurringStreakLastPaidDayKey',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'recurringStreakLastPaidDayKey',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'recurringStreakLastPaidDayKey',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyContains(String value,
+          {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'recurringStreakLastPaidDayKey',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyMatches(String pattern,
+          {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'recurringStreakLastPaidDayKey',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'recurringStreakLastPaidDayKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakLastPaidDayKeyIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'recurringStreakLastPaidDayKey',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakRewardDayEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'recurringStreakRewardDay',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakRewardDayGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'recurringStreakRewardDay',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakRewardDayLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'recurringStreakRewardDay',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      recurringStreakRewardDayBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'recurringStreakRewardDay',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
   QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition> remindAtMillisIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(const FilterCondition.isNull(
@@ -1817,6 +2231,16 @@ extension TaskDocQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
         property: r'reminderPending',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterFilterCondition>
+      reminderSuperImportantEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'reminderSuperImportant',
         value: value,
       ));
     });
@@ -2076,6 +2500,47 @@ extension TaskDocQuerySortBy on QueryBuilder<TaskDoc, TaskDoc, QSortBy> {
     });
   }
 
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> sortByLastTaskRewardDayKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastTaskRewardDayKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByLastTaskRewardDayKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastTaskRewardDayKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByRecurringStreakLastPaidDayKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakLastPaidDayKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByRecurringStreakLastPaidDayKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakLastPaidDayKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByRecurringStreakRewardDay() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakRewardDay', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByRecurringStreakRewardDayDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakRewardDay', Sort.desc);
+    });
+  }
+
   QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> sortByRemindAtMillis() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'remindAtMillis', Sort.asc);
@@ -2121,6 +2586,19 @@ extension TaskDocQuerySortBy on QueryBuilder<TaskDoc, TaskDoc, QSortBy> {
   QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> sortByReminderPendingDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'reminderPending', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> sortByReminderSuperImportant() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'reminderSuperImportant', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      sortByReminderSuperImportantDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'reminderSuperImportant', Sort.desc);
     });
   }
 
@@ -2260,6 +2738,47 @@ extension TaskDocQuerySortThenBy
     });
   }
 
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> thenByLastTaskRewardDayKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastTaskRewardDayKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByLastTaskRewardDayKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastTaskRewardDayKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByRecurringStreakLastPaidDayKey() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakLastPaidDayKey', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByRecurringStreakLastPaidDayKeyDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakLastPaidDayKey', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByRecurringStreakRewardDay() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakRewardDay', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByRecurringStreakRewardDayDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'recurringStreakRewardDay', Sort.desc);
+    });
+  }
+
   QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> thenByRemindAtMillis() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'remindAtMillis', Sort.asc);
@@ -2305,6 +2824,19 @@ extension TaskDocQuerySortThenBy
   QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> thenByReminderPendingDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'reminderPending', Sort.desc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy> thenByReminderSuperImportant() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'reminderSuperImportant', Sort.asc);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QAfterSortBy>
+      thenByReminderSuperImportantDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'reminderSuperImportant', Sort.desc);
     });
   }
 
@@ -2386,6 +2918,29 @@ extension TaskDocQueryWhereDistinct
     });
   }
 
+  QueryBuilder<TaskDoc, TaskDoc, QDistinct> distinctByLastTaskRewardDayKey(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'lastTaskRewardDayKey',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QDistinct>
+      distinctByRecurringStreakLastPaidDayKey({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'recurringStreakLastPaidDayKey',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QDistinct>
+      distinctByRecurringStreakRewardDay() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'recurringStreakRewardDay');
+    });
+  }
+
   QueryBuilder<TaskDoc, TaskDoc, QDistinct> distinctByRemindAtMillis() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'remindAtMillis');
@@ -2407,6 +2962,12 @@ extension TaskDocQueryWhereDistinct
   QueryBuilder<TaskDoc, TaskDoc, QDistinct> distinctByReminderPending() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'reminderPending');
+    });
+  }
+
+  QueryBuilder<TaskDoc, TaskDoc, QDistinct> distinctByReminderSuperImportant() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'reminderSuperImportant');
     });
   }
 
@@ -2488,6 +3049,27 @@ extension TaskDocQueryProperty
     });
   }
 
+  QueryBuilder<TaskDoc, String?, QQueryOperations>
+      lastTaskRewardDayKeyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastTaskRewardDayKey');
+    });
+  }
+
+  QueryBuilder<TaskDoc, String?, QQueryOperations>
+      recurringStreakLastPaidDayKeyProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'recurringStreakLastPaidDayKey');
+    });
+  }
+
+  QueryBuilder<TaskDoc, int, QQueryOperations>
+      recurringStreakRewardDayProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'recurringStreakRewardDay');
+    });
+  }
+
   QueryBuilder<TaskDoc, int?, QQueryOperations> remindAtMillisProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'remindAtMillis');
@@ -2509,6 +3091,13 @@ extension TaskDocQueryProperty
   QueryBuilder<TaskDoc, bool, QQueryOperations> reminderPendingProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'reminderPending');
+    });
+  }
+
+  QueryBuilder<TaskDoc, bool, QQueryOperations>
+      reminderSuperImportantProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'reminderSuperImportant');
     });
   }
 

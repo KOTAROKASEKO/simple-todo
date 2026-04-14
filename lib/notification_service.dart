@@ -21,6 +21,44 @@ class NotificationService {
 
   bool _initialized = false;
 
+  Future<void> _createAndroidChannels() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
+
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'task_reminders',
+        'Task Reminders',
+        description: 'Reminders for your tasks',
+        importance: Importance.high,
+      ),
+    );
+
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'task_reminders_urgent',
+        'Super important task reminders',
+        description:
+            'Strong sound and vibration. Use sparingly for must-not-miss tasks.',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+        showBadge: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      ),
+    );
+
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'daily_check_ins',
+        'Daily Check-ins',
+        description: 'Reminders to review your todo list',
+        importance: Importance.high,
+      ),
+    );
+  }
+
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
 
@@ -30,6 +68,7 @@ class NotificationService {
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
     await _plugin.initialize(initSettings);
+    await _createAndroidChannels();
     _initialized = true;
   }
 
@@ -90,12 +129,24 @@ class NotificationService {
 
   /// Schedules a reminder notification.
   /// Returns the notification id so it can be cancelled later if needed.
+  ///
+  /// When [superImportant] is true, Android uses a separate channel with
+  /// max importance, alarm category, and alarm audio attributes; iOS uses
+  /// a time-sensitive interruption level.
   Future<int?> scheduleReminder({
     required String taskTitle,
     required DateTime scheduledTime,
+    bool superImportant = false,
   }) async {
-    if (kIsWeb || !_initialized) {
-      debugPrint('[NotificationService] Not initialized or running on web');
+    if (kIsWeb) {
+      debugPrint('[NotificationService] Running on web; skip local schedule');
+      return null;
+    }
+    if (!_initialized) {
+      await init();
+    }
+    if (!_initialized) {
+      debugPrint('[NotificationService] Initialization failed; cannot schedule');
       return null;
     }
 
@@ -117,26 +168,60 @@ class NotificationService {
       return null;
     }
 
+    final displayTitle = taskTitle.trim().isEmpty ? 'Task' : taskTitle.trim();
+
     debugPrint(
-      '[NotificationService] Scheduling "$taskTitle" at $tzTime (id=$id)',
+      '[NotificationService] Scheduling "$displayTitle" at $tzTime (id=$id)',
     );
 
     final scheduleMode = await _resolveScheduleMode();
     debugPrint('[NotificationService] Schedule mode: $scheduleMode');
 
+    final androidDetails = superImportant
+        ? AndroidNotificationDetails(
+            'task_reminders_urgent',
+            'Super important task reminders',
+            channelDescription:
+                'Strong sound and vibration. Use sparingly for must-not-miss tasks.',
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.alarm,
+            playSound: true,
+            enableVibration: true,
+            vibrationPattern: Int64List.fromList([0, 400, 180, 400, 180, 600]),
+            audioAttributesUsage: AudioAttributesUsage.alarm,
+            styleInformation: BigTextStyleInformation(
+              displayTitle,
+              contentTitle: 'Task reminder',
+            ),
+          )
+        : AndroidNotificationDetails(
+            'task_reminders',
+            'Task Reminders',
+            channelDescription: 'Reminders for your tasks',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(
+              displayTitle,
+              contentTitle: 'Task reminder',
+            ),
+          );
+
     await _plugin.zonedSchedule(
       id,
-      'Task Reminder',
-      taskTitle,
+      displayTitle,
+      'Reminder',
       tzTime,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          'task_reminders',
-          'Task Reminders',
-          channelDescription: 'Reminders for your tasks',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
+      NotificationDetails(
+        android: androidDetails,
+        iOS: superImportant
+            ? const DarwinNotificationDetails(
+                presentAlert: true,
+                presentBadge: true,
+                presentSound: true,
+                interruptionLevel: InterruptionLevel.timeSensitive,
+              )
+            : null,
       ),
       androidScheduleMode: scheduleMode,
     );
@@ -197,10 +282,15 @@ class NotificationService {
 
   /// Schedules daily notifications at the saved times (or 7am, 12pm, 9pm).
   Future<void> scheduleDailyCheckReminders() async {
-    if (kIsWeb || !_initialized) {
-      debugPrint(
-        '[NotificationService] Skipping daily reminders: not initialized or web',
-      );
+    if (kIsWeb) {
+      debugPrint('[NotificationService] Skipping daily reminders on web');
+      return;
+    }
+    if (!_initialized) {
+      await init();
+    }
+    if (!_initialized) {
+      debugPrint('[NotificationService] Skipping daily reminders: init failed');
       return;
     }
 

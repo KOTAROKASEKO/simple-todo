@@ -66,4 +66,10 @@ class DefaultFirebaseOptions {
     projectId: 'simpletodo-19a48',
     storageBucket: 'simpletodo-19a48.firebasestorage.app',
   );
+
+  /// Web OAuth client ID (`client_type`: 3 in `android/app/google-services.json`).
+  /// Used as Google Sign-In `serverClientId` on Android / iOS and as `clientId` on **web**
+  /// (see `initializeGoogleSignInForApp` and `web/index.html` meta).
+  static const String googleServerClientId =
+      '512858444455-9e6oa1h8ecadus5dr4p3sc5no27vuo0f.apps.googleusercontent.com';
 }

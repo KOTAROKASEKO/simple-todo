@@ -27,8 +27,20 @@ class TaskDoc {
 
   late bool reminderPending;
 
+  /// Local notification uses an alarm-style channel when true (Android).
+  bool reminderSuperImportant = false;
+
   String? doneByDateJson;
   String? checklistDoneByDateJson;
+
+  /// Next recurring daily streak tier (1–7) for coin payout.
+  int recurringStreakRewardDay = 1;
+
+  /// Last calendar day (yyyy-MM-dd) when recurring streak coins were paid.
+  String? recurringStreakLastPaidDayKey;
+
+  /// Last day task completion granted coins (prevents same-day double rewards).
+  String? lastTaskRewardDayKey;
 }
 
 @embedded

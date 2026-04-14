@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:512858444455:android:cf604cca1e2b00ddb28182",
+        "mobilesdk_app_id": "1:512858444455:android:7cbaee81ed7bc79db28182",
         "android_client_info": {
           "package_name": "com.crossplatformtodo"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "512858444455-9e6oa1h8ecadus5dr4p3sc5no27vuo0f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAwOCD1LVbLHEUMapu_L5QNRXCC5Thka9k"
@@ -20,7 +25,41 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "512858444455-9e6oa1h8ecadus5dr4p3sc5no27vuo0f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:512858444455:android:cf604cca1e2b00ddb28182",
+        "android_client_info": {
+          "package_name": "com.example.simpletodo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "512858444455-9e6oa1h8ecadus5dr4p3sc5no27vuo0f.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAwOCD1LVbLHEUMapu_L5QNRXCC5Thka9k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "512858444455-9e6oa1h8ecadus5dr4p3sc5no27vuo0f.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

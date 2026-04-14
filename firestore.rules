@@ -14,17 +14,102 @@ service cloud.firestore {
         || (('reminderLastSentAt' in resource.data) && request.resource.data.reminderLastSentAt == resource.data.reminderLastSentAt);
     }
 
-    // User profile / prefs on the parent doc (e.g. journal AI personalization text).
+    function validJournalAiCharacter(v) {
+      return v == 'default'
+        || v == 'gyaru'
+        || v == 'kopitiam_uncle'
+        || v == 'chinese_auntie';
+    }
+
+    function validTaskCoins(v) {
+      return v is int && v >= 0 && v <= 2000000;
+    }
+
+    function validUnlockedCharactersList(lst) {
+      return lst is list && lst.size() <= 8;
+    }
+
+    function validJournalDailyReminderOffset(v) {
+      return v is int && v >= -840 && v <= 840;
+    }
+
+    function journalReminderServerKeyOk() {
+      return !('journalDailyReminderLastSentDayKey' in request.resource.data)
+        || (('journalDailyReminderLastSentDayKey' in resource.data)
+            && request.resource.data.journalDailyReminderLastSentDayKey == resource.data.journalDailyReminderLastSentDayKey);
+    }
+
+    // User profile / prefs on the parent doc (journal AI config/context).
     match /todo/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId)
-        && request.resource.data.keys().hasOnly(['journalPersonalization'])
-        && request.resource.data.journalPersonalization is string
-        && request.resource.da  ta.journalPersonalization.size() <= 10000;
+        && !('journalDailyReminderLastSentDayKey' in request.resource.data)
+        && request.resource.data.keys().hasOnly([
+          'journalPersonalization',
+          'journalImportantProfile',
+          'journalAiCharacter',
+          'journalRecentConversationHistory',
+          'journalDailyReminderEnabled',
+          'journalDailyReminderTimeZoneOffsetMinutes',
+          'journalDailyReminderGreetingName',
+          'taskCoins',
+          'unlockedJournalAiCharacters',
+        ])
+        && (!('journalPersonalization' in request.resource.data)
+            || (request.resource.data.journalPersonalization is string
+                && request.resource.data.journalPersonalization.size() <= 10000))
+        && (!('journalImportantProfile' in request.resource.data)
+            || request.resource.data.journalImportantProfile is map)
+        && (!('journalAiCharacter' in request.resource.data)
+            || (request.resource.data.journalAiCharacter is string
+                && validJournalAiCharacter(request.resource.data.journalAiCharacter)))
+        && (!('journalRecentConversationHistory' in request.resource.data)
+            || request.resource.data.journalRecentConversationHistory is list)
+        && (!('journalDailyReminderEnabled' in request.resource.data)
+            || request.resource.data.journalDailyReminderEnabled is bool)
+        && (!('journalDailyReminderTimeZoneOffsetMinutes' in request.resource.data)
+            || validJournalDailyReminderOffset(request.resource.data.journalDailyReminderTimeZoneOffsetMinutes))
+        && (!('journalDailyReminderGreetingName' in request.resource.data)
+            || (request.resource.data.journalDailyReminderGreetingName is string
+                && request.resource.data.journalDailyReminderGreetingName.size() <= 40))
+        && (!('taskCoins' in request.resource.data)
+            || validTaskCoins(request.resource.data.taskCoins))
+        && (!('unlockedJournalAiCharacters' in request.resource.data)
+            || validUnlockedCharactersList(request.resource.data.unlockedJournalAiCharacters));
       allow update: if isOwner(userId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['journalPersonalization'])
-        && request.resource.data.journalPersonalization is string
-        && request.resource.data.journalPersonalization.size() <= 10000;
+        && journalReminderServerKeyOk()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'journalPersonalization',
+          'journalImportantProfile',
+          'journalAiCharacter',
+          'journalRecentConversationHistory',
+          'journalDailyReminderEnabled',
+          'journalDailyReminderTimeZoneOffsetMinutes',
+          'journalDailyReminderGreetingName',
+          'taskCoins',
+          'unlockedJournalAiCharacters',
+        ])
+        && (!('journalPersonalization' in request.resource.data)
+            || (request.resource.data.journalPersonalization is string
+                && request.resource.data.journalPersonalization.size() <= 10000))
+        && (!('journalImportantProfile' in request.resource.data)
+            || request.resource.data.journalImportantProfile is map)
+        && (!('journalAiCharacter' in request.resource.data)
+            || (request.resource.data.journalAiCharacter is string
+                && validJournalAiCharacter(request.resource.data.journalAiCharacter)))
+        && (!('journalRecentConversationHistory' in request.resource.data)
+            || request.resource.data.journalRecentConversationHistory is list)
+        && (!('journalDailyReminderEnabled' in request.resource.data)
+            || request.resource.data.journalDailyReminderEnabled is bool)
+        && (!('journalDailyReminderTimeZoneOffsetMinutes' in request.resource.data)
+            || validJournalDailyReminderOffset(request.resource.data.journalDailyReminderTimeZoneOffsetMinutes))
+        && (!('journalDailyReminderGreetingName' in request.resource.data)
+            || (request.resource.data.journalDailyReminderGreetingName is string
+                && request.resource.data.journalDailyReminderGreetingName.size() <= 40))
+        && (!('taskCoins' in request.resource.data)
+            || validTaskCoins(request.resource.data.taskCoins))
+        && (!('unlockedJournalAiCharacters' in request.resource.data)
+            || validUnlockedCharactersList(request.resource.data.unlockedJournalAiCharacters));
     }
 
     match /todo/{userId}/tasks/{taskId} {

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 class PushNotificationService {
   PushNotificationService._();
@@ -9,11 +10,12 @@ class PushNotificationService {
 
   bool _initialized = false;
 
+  /// Sets up FCM listeners and token sync. Does **not** show the OS permission
+  /// prompt — call [showRationaleAndRequestPush] from feature entry points.
   Future<void> init() async {
     if (_initialized || kIsWeb) return;
 
     final messaging = FirebaseMessaging.instance;
-    await messaging.requestPermission();
 
     FirebaseMessaging.onMessage.listen((message) {
       debugPrint('[PushNotificationService] Foreground message: ${message.messageId}');
@@ -39,6 +41,67 @@ class PushNotificationService {
     });
 
     _initialized = true;
+  }
+
+  /// Short in-app explanation, then the system notification permission dialog.
+  /// Re-registers the FCM token when appropriate. Returns whether alerts are allowed.
+  Future<bool> showRationaleAndRequestPush(
+    BuildContext context, {
+    required String title,
+    required String message,
+    String continueLabel = 'Continue',
+    String cancelLabel = 'Not now',
+  }) async {
+    if (kIsWeb) return false;
+
+    final prior = await FirebaseMessaging.instance.getNotificationSettings();
+    switch (prior.authorizationStatus) {
+      case AuthorizationStatus.authorized:
+      case AuthorizationStatus.provisional:
+        await _saveCurrentUserTokenIfAvailable();
+        return true;
+      case AuthorizationStatus.denied:
+        await _saveCurrentUserTokenIfAvailable();
+        return false;
+      case AuthorizationStatus.notDetermined:
+        break;
+    }
+
+    if (!context.mounted) return false;
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(cancelLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(continueLabel),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (proceed != true) return false;
+
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    await _saveCurrentUserTokenIfAvailable();
+
+    final auth = settings.authorizationStatus;
+    return auth == AuthorizationStatus.authorized ||
+        auth == AuthorizationStatus.provisional;
   }
 
   Future<void> _saveCurrentUserTokenIfAvailable() async {

@@ -14,6 +14,7 @@ class AddTaskPage extends StatefulWidget {
     required String title,
     required bool isRecurringDaily,
     TimeOfDay? reminderTime,
+    bool reminderSuperImportant,
     List<String>? checklistItems,
   }) onCreateTask;
 
@@ -30,6 +31,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
   bool _recurring = false;
   bool _hasReminder = false;
   TimeOfDay? _reminderTime;
+  bool _reminderSuperImportant = false;
   bool _isSaving = false;
   bool _checklistSortMode = false;
 
@@ -150,6 +152,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
         title: title,
         isRecurringDaily: _recurring,
         reminderTime: _hasReminder ? _reminderTime : null,
+        reminderSuperImportant: _hasReminder && _reminderSuperImportant,
         checklistItems: _checklistTexts().isNotEmpty ? _checklistTexts() : null,
       );
       if (!mounted) return;
@@ -340,6 +343,9 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     if (value && _reminderTime == null) {
                       _reminderTime = const TimeOfDay(hour: 9, minute: 0);
                     }
+                    if (!value) {
+                      _reminderSuperImportant = false;
+                    }
                   });
                 },
                 title: Text(
@@ -393,6 +399,45 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     ],
                   ),
                 ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _reminderSuperImportant,
+                activeThumbColor: const Color(0xFF111111),
+                onChanged: (value) {
+                  setState(() {
+                    _reminderSuperImportant = value;
+                    if (value) {
+                      _hasReminder = true;
+                      _reminderTime ??= const TimeOfDay(hour: 9, minute: 0);
+                    }
+                  });
+                },
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.priority_high_rounded,
+                      size: 20,
+                      color: Colors.red.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Super important',
+                        style: TextStyle(color: Colors.grey.shade800),
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: Text(
+                  _hasReminder
+                      ? 'Android: max notification importance, alarm-style sound & vibration.'
+                      : 'Turning this on also enables Add reminder.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
             ],
           ),
         ),

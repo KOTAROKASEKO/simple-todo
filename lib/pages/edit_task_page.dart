@@ -18,6 +18,7 @@ class EditTaskPage extends StatefulWidget {
     required this.initialIsRecurringDaily,
     required this.initialHasReminder,
     required this.initialReminderTime,
+    this.initialReminderSuperImportant = false,
     required this.onSave,
     required this.onDelete,
   });
@@ -29,6 +30,7 @@ class EditTaskPage extends StatefulWidget {
   final bool initialIsRecurringDaily;
   final bool initialHasReminder;
   final TimeOfDay? initialReminderTime;
+  final bool initialReminderSuperImportant;
 
   /// Called with form data; implementation updates Firestore/Hive and syncs widget.
   final Future<void> Function({
@@ -37,6 +39,7 @@ class EditTaskPage extends StatefulWidget {
     required bool isRecurringDaily,
     required bool hasReminder,
     TimeOfDay? reminderTime,
+    required bool reminderSuperImportant,
   }) onSave;
 
   final Future<void> Function() onDelete;
@@ -52,6 +55,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
   late bool _isRecurringDaily;
   late bool _hasReminder;
   late TimeOfDay? _reminderTime;
+  late bool _reminderSuperImportant;
   bool _isSaving = false;
   bool _isDeleting = false;
   bool _checklistSortMode = false;
@@ -74,6 +78,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
     _isRecurringDaily = widget.initialIsRecurringDaily;
     _hasReminder = widget.initialHasReminder;
     _reminderTime = widget.initialReminderTime;
+    _reminderSuperImportant = widget.initialReminderSuperImportant;
   }
 
   @override
@@ -127,6 +132,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
         isRecurringDaily: _isRecurringDaily,
         hasReminder: _hasReminder,
         reminderTime: _hasReminder ? (_reminderTime ?? const TimeOfDay(hour: 9, minute: 0)) : null,
+        reminderSuperImportant: _hasReminder && _reminderSuperImportant,
       );
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
@@ -358,6 +364,9 @@ class _EditTaskPageState extends State<EditTaskPage> {
                   if (value && _reminderTime == null) {
                     _reminderTime = const TimeOfDay(hour: 9, minute: 0);
                   }
+                  if (!value) {
+                    _reminderSuperImportant = false;
+                  }
                 });
               },
               title: const Text('Reminder'),
@@ -396,6 +405,33 @@ class _EditTaskPageState extends State<EditTaskPage> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _reminderSuperImportant,
+              activeThumbColor: const Color(0xFF111111),
+              onChanged: (value) {
+                setState(() {
+                  _reminderSuperImportant = value;
+                  if (value) {
+                    _hasReminder = true;
+                    _reminderTime ??= const TimeOfDay(hour: 9, minute: 0);
+                  }
+                });
+              },
+                title: Row(
+                  children: [
+                    Icon(Icons.priority_high_rounded, size: 20, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    const Expanded(child: Text('Super important')),
+                  ],
+                ),
+                subtitle: Text(
+                  _hasReminder
+                      ? 'Android: stronger channel (alarm-style).'
+                      : 'Turning this on also enables Reminder.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ),
             const SizedBox(height: 24),

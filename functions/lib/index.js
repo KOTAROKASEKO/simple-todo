@@ -33,13 +33,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.analyzeMistakes = exports.sendTestDailyCheckNotification = exports.deliverRandomJournalAiFeedback = exports.onJournalEntryCreatedQueueAi = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
+exports.analyzeMistakes = exports.sendTestJournalDailyReminder = exports.sendTestDailyCheckNotification = exports.deliverRandomJournalAiFeedback = exports.onJournalEntryCreatedQueueAi = exports.sendJournalDailyReminders = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const vertexai_1 = require("@google-cloud/vertexai");
 const reminders_1 = require("./reminders");
 Object.defineProperty(exports, "sendDueTaskReminders", { enumerable: true, get: function () { return reminders_1.sendDueTaskReminders; } });
 Object.defineProperty(exports, "sendDailyCheckReminders", { enumerable: true, get: function () { return reminders_1.sendDailyCheckReminders; } });
+const journal_daily_reminder_1 = require("./journal_daily_reminder");
+Object.defineProperty(exports, "sendJournalDailyReminders", { enumerable: true, get: function () { return journal_daily_reminder_1.sendJournalDailyReminders; } });
 const journal_ai_surprise_1 = require("./journal_ai_surprise");
 Object.defineProperty(exports, "onJournalEntryCreatedQueueAi", { enumerable: true, get: function () { return journal_ai_surprise_1.onJournalEntryCreatedQueueAi; } });
 Object.defineProperty(exports, "deliverRandomJournalAiFeedback", { enumerable: true, get: function () { return journal_ai_surprise_1.deliverRandomJournalAiFeedback; } });
@@ -68,6 +70,43 @@ exports.sendTestDailyCheckNotification = (0, https_1.onCall)({ region: "us-centr
         notification: {
             title: "Check your tasks",
             body: "Test notification（テスト送信）",
+        },
+    });
+    return { ok: true };
+});
+/** Sends one test journal 8 PM-style reminder (character + greeting from Firestore). */
+exports.sendTestJournalDailyReminder = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {
+    if (!request.auth) {
+        throw new https_1.HttpsError("unauthenticated", "Sign in required.");
+    }
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const userRef = db.collection("todo").doc(uid);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data() ?? {};
+    const characterId = typeof userData.journalAiCharacter === "string"
+        ? userData.journalAiCharacter.trim()
+        : "default";
+    const greetingName = typeof userData.journalDailyReminderGreetingName === "string"
+        ? userData.journalDailyReminderGreetingName
+        : "";
+    const copy = (0, journal_daily_reminder_1.journalDailyReminderCopy)(characterId, greetingName);
+    const tokensSnap = await userRef.collection("deviceTokens").get();
+    const tokens = tokensSnap.docs
+        .map((d) => d.get("token"))
+        .filter((t) => typeof t === "string" && t.length > 0);
+    if (tokens.length === 0) {
+        throw new https_1.HttpsError("failed-precondition", "No device token registered. Open the app and try again.");
+    }
+    const messaging = admin.messaging();
+    await messaging.sendEachForMulticast({
+        tokens,
+        notification: {
+            title: copy.title,
+            body: `[Test] ${copy.body}`,
+        },
+        data: {
+            type: "journal_daily_reminder",
         },
     });
     return { ok: true };
