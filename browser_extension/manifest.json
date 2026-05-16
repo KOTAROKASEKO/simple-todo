@@ -1,18 +1,24 @@
 {
   "manifest_version": 3,
   "name": "SimpleTodo Companion",
-  "version": "1.0.0",
-  "description": "Sidebar todo extension connected to Firebase.",
-  "action": {},
+  "version": "1.0.2",
+  "description": "Manage your SimpleTodo tasks and journal from Chrome's side panel.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Open SimpleTodo"
+  },
   "background": {
     "service_worker": "background.js"
   },
   "side_panel": {
     "default_path": "popup.html"
   },
-  "permissions": [
-    "storage",
-    "sidePanel",
-    "alarms"
-  ]
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "permissions": ["storage", "sidePanel"]
 }

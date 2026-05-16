@@ -34,6 +34,10 @@ const db = getFirestore(app);
 
 const authSection = document.getElementById('authSection');
 const todoSection = document.getElementById('todoSection');
+const tasksView = document.getElementById('tasksView');
+const journalView = document.getElementById('journalView');
+const tasksTabBtn = document.getElementById('tasksTabBtn');
+const journalTabBtn = document.getElementById('journalTabBtn');
 const emailInput = document.getElementById('emailInput');
 const passwordInput = document.getElementById('passwordInput');
 const authSubmitBtn = document.getElementById('authSubmitBtn');
@@ -41,56 +45,131 @@ const switchModeBtn = document.getElementById('switchModeBtn');
 const authError = document.getElementById('authError');
 const logoutBtn = document.getElementById('logoutBtn');
 const loadingText = document.getElementById('loadingText');
-const pomodoroPeekBtn = document.getElementById('pomodoroPeekBtn');
 
 const titleInput = document.getElementById('titleInput');
-const descInput = document.getElementById('descInput');
+const checklistDraftList = document.getElementById('checklistDraftList');
+const checklistItemInput = document.getElementById('checklistItemInput');
 const dateInput = document.getElementById('dateInput');
-const alarmBtn = document.getElementById('alarmBtn');
-const recurringBtn = document.getElementById('recurringBtn');
+const repeatDailyCheckbox = document.getElementById('repeatDailyCheckbox');
+const reminderToggle = document.getElementById('reminderToggle');
+const composerPanel = document.getElementById('composerPanel');
+const composerBackdrop = document.getElementById('composerBackdrop');
+const addTaskFab = document.getElementById('addTaskFab');
+const closeComposerBtn = document.getElementById('closeComposerBtn');
+const composerTitleText = document.getElementById('composerTitleText');
 const reminderTimeWrap = document.getElementById('reminderTimeWrap');
 const reminderTimeInput = document.getElementById('reminderTimeInput');
 const addTaskBtn = document.getElementById('addTaskBtn');
 const taskList = document.getElementById('taskList');
-const focusTimerText = document.getElementById('focusTimerText');
-const focusStartPauseBtn = document.getElementById('focusStartPauseBtn');
-const focusResetBtn = document.getElementById('focusResetBtn');
-const focusDurationInput = document.getElementById('focusDurationInput');
-const focusApplyDurationBtn = document.getElementById('focusApplyDurationBtn');
-const focusTaskForm = document.getElementById('focusTaskForm');
-const focusTaskInput = document.getElementById('focusTaskInput');
-const addFocusTaskBtn = document.getElementById('addFocusTaskBtn');
-const focusTaskList = document.getElementById('focusTaskList');
-const focusSection = document.getElementById('focusSection');
-const closeFocusPanelBtn = document.getElementById('closeFocusPanelBtn');
-const taskSheet = document.getElementById('taskSheet');
-const taskSheetBackdrop = document.getElementById('taskSheetBackdrop');
-const sheetEditBtn = document.getElementById('sheetEditBtn');
-const sheetDeleteBtn = document.getElementById('sheetDeleteBtn');
-const sheetCancelBtn = document.getElementById('sheetCancelBtn');
-
+const dateStrip = document.getElementById('dateStrip');
+const calendarMonthLabel = document.getElementById('calendarMonthLabel');
+const calendarPrevBtn = document.getElementById('calendarPrevBtn');
+const calendarNextBtn = document.getElementById('calendarNextBtn');
+const journalList = document.getElementById('journalList');
+const addJournalFab = document.getElementById('addJournalFab');
+const journalComposerBackdrop = document.getElementById('journalComposerBackdrop');
+const journalComposerPanel = document.getElementById('journalComposerPanel');
+const closeJournalComposerBtn = document.getElementById('closeJournalComposerBtn');
+const journalTitleInput = document.getElementById('journalTitleInput');
+const journalBodyInput = document.getElementById('journalBodyInput');
+const saveJournalBtn = document.getElementById('saveJournalBtn');
+const taskActionBackdrop = document.getElementById('taskActionBackdrop');
+const taskActionSheet = document.getElementById('taskActionSheet');
+const taskActionChecklist = document.getElementById('taskActionChecklist');
+const taskActionEditBtn = document.getElementById('taskActionEditBtn');
+const taskActionDeleteBtn = document.getElementById('taskActionDeleteBtn');
+const taskActionCancelBtn = document.getElementById('taskActionCancelBtn');
+const journalDetailBackdrop = document.getElementById('journalDetailBackdrop');
+const journalDetailSheet = document.getElementById('journalDetailSheet');
+const journalDetailDate = document.getElementById('journalDetailDate');
+const journalDetailContent = document.getElementById('journalDetailContent');
+const journalDetailCloseBtn = document.getElementById('journalDetailCloseBtn');
 let registerMode = false;
 let stopTasksListener = null;
-let stopFocusTasksListener = null;
-let selectedTask = null;
+let stopJournalListener = null;
 let pendingTasks = [];
 let snapshotTasks = [];
-let focusSnapshotTasks = [];
+let journalSnapshots = [];
 let currentToday = null;
 let activeUser = null;
 let isRecurringDaily = false;
 let hasReminder = false;
-let isPomodoroOpen = false;
-let focusDurationMinutes = 25;
-let focusSeconds = focusDurationMinutes * 60;
-let focusTimerRunning = false;
-let focusRefreshId = null;
+let isComposerOpen = false;
+let checklistDraftItems = [];
+let editingTaskRef = null;
+let selectedTaskAction = null;
+let activeTab = 'tasks';
 
 function dayKey(date) {
   const y = String(date.getFullYear()).padStart(4, '0');
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function shiftDate(baseDate, diffDays) {
+  const next = new Date(baseDate);
+  next.setDate(next.getDate() + diffDays);
+  return next;
+}
+
+function parseDayKey(value) {
+  const [yearText, monthText, dayText] = value.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  return new Date(year, month - 1, day);
+}
+
+function buildDateChipLabel(date) {
+  const weekday = date.toLocaleDateString(undefined, { weekday: 'short' });
+  const day = String(date.getDate());
+  return { weekday, day };
+}
+
+function renderDateStrip() {
+  if (!dateStrip || !calendarMonthLabel || !currentToday) return;
+  const selectedDate = parseDayKey(currentToday);
+  calendarMonthLabel.textContent = selectedDate.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  dateStrip.innerHTML = '';
+  for (let offset = -3; offset <= 3; offset += 1) {
+    const chipDate = shiftDate(selectedDate, offset);
+    const key = dayKey(chipDate);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `date-chip${key === currentToday ? ' active' : ''}`;
+    chip.setAttribute('role', 'tab');
+    chip.setAttribute('aria-selected', String(key === currentToday));
+    chip.dataset.dateKey = key;
+    const { weekday, day } = buildDateChipLabel(chipDate);
+    chip.innerHTML = `<span class="date-chip-weekday">${weekday}</span><span class="date-chip-day">${day}</span>`;
+    chip.addEventListener('click', () => {
+      currentToday = key;
+      dateInput.value = key;
+      renderDateStrip();
+      renderTasks();
+    });
+    dateStrip.appendChild(chip);
+  }
+}
+
+function setComposerVisibility(open) {
+  isComposerOpen = open;
+  if (composerPanel) composerPanel.hidden = !open;
+  if (composerBackdrop) composerBackdrop.hidden = !open;
+  if (addTaskFab) addTaskFab.hidden = !activeUser || open;
+  if (open) titleInput.focus();
+}
+
+function setJournalComposerVisibility(open) {
+  if (journalComposerPanel) journalComposerPanel.hidden = !open;
+  if (journalComposerBackdrop) journalComposerBackdrop.hidden = !open;
+  if (addJournalFab) addJournalFab.hidden = activeTab !== 'journal' || !activeUser || open;
+  if (open && journalTitleInput) journalTitleInput.focus();
 }
 
 function parseDateInput(value) {
@@ -134,173 +213,11 @@ function getNextReminderDate(selectedDate, hour, minute, isRecurringDaily) {
 
 function refreshReminderVisibility() {
   reminderTimeWrap.hidden = !hasReminder;
-  alarmBtn.setAttribute('aria-pressed', String(hasReminder));
+  if (reminderToggle) reminderToggle.checked = hasReminder;
 }
 
 function refreshRecurringButton() {
-  recurringBtn.classList.toggle('active', isRecurringDaily);
-  recurringBtn.setAttribute('aria-pressed', String(isRecurringDaily));
-}
-
-function formatFocusTimer(totalSeconds) {
-  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-  const seconds = String(totalSeconds % 60).padStart(2, '0');
-  return `${minutes}:${seconds}`;
-}
-
-function renderFocusTimer() {
-  focusTimerText.textContent = formatFocusTimer(focusSeconds);
-  focusStartPauseBtn.textContent = focusTimerRunning ? 'Pause' : 'Start';
-}
-
-function syncPomodoroFromBackground() {
-  if (typeof chrome?.runtime?.sendMessage !== 'function') return;
-  chrome.runtime.sendMessage({ action: 'pomodoro_get' }, (res) => {
-    if (!res) return;
-    focusTimerRunning = res.running;
-    focusSeconds = res.remaining ?? 0;
-    if (res.durationMinutes != null) focusDurationMinutes = res.durationMinutes;
-    renderFocusTimer();
-  });
-}
-
-function startFocusRefresh() {
-  if (focusRefreshId) return;
-  focusRefreshId = setInterval(() => {
-    syncPomodoroFromBackground();
-  }, 1000);
-}
-
-function stopFocusRefresh() {
-  if (focusRefreshId) {
-    clearInterval(focusRefreshId);
-    focusRefreshId = null;
-  }
-}
-
-function toggleFocusTimer() {
-  if (typeof chrome?.runtime?.sendMessage !== 'function') return;
-  if (focusTimerRunning) {
-    chrome.runtime.sendMessage({ action: 'pomodoro_pause' }, () => {
-      focusTimerRunning = false;
-      syncPomodoroFromBackground();
-      stopFocusRefresh();
-      renderFocusTimer();
-    });
-    return;
-  }
-  if (focusSeconds <= 0) {
-    focusSeconds = focusDurationMinutes * 60;
-  }
-  if (!activeUser) return;
-  chrome.runtime.sendMessage({
-    action: 'pomodoro_start',
-    seconds: focusSeconds,
-    durationMinutes: focusDurationMinutes,
-    userUid: activeUser.uid,
-  }, () => {
-    focusTimerRunning = true;
-    startFocusRefresh();
-    renderFocusTimer();
-  });
-}
-
-function resetFocusTimer() {
-  if (typeof chrome?.runtime?.sendMessage !== 'function') return;
-  chrome.runtime.sendMessage({ action: 'pomodoro_reset' }, () => {
-    focusTimerRunning = false;
-    focusSeconds = focusDurationMinutes * 60;
-    stopFocusRefresh();
-    renderFocusTimer();
-  });
-}
-
-function applyFocusDuration() {
-  const next = Number(focusDurationInput.value);
-  if (!Number.isFinite(next) || next < 1 || next > 180) {
-    focusDurationInput.value = String(focusDurationMinutes);
-    return;
-  }
-  focusDurationMinutes = Math.floor(next);
-  resetFocusTimer();
-}
-
-function renderFocusTasks() {
-  focusTaskList.innerHTML = '';
-  if (focusSnapshotTasks.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'focus-task-empty';
-    empty.textContent = 'No focus-prep tasks yet.';
-    focusTaskList.appendChild(empty);
-    return;
-  }
-
-  focusSnapshotTasks.forEach((task) => {
-    const item = document.createElement('li');
-    item.className = `focus-task-item ${task.isDone ? 'done' : ''}`;
-
-    const toggle = document.createElement('button');
-    toggle.className = 'icon-btn task-toggle';
-    toggle.textContent = task.isDone ? '↺' : '✓';
-    toggle.title = task.isDone ? 'Mark as undone' : 'Mark as done';
-    toggle.setAttribute('aria-label', toggle.title);
-    toggle.addEventListener('click', async () => {
-      const nextIsDone = !task.isDone;
-      await updateDoc(task.ref, { isDone: nextIsDone });
-      if (nextIsDone) {
-        const hasUncheckedOthers = focusSnapshotTasks
-          .filter((other) => other.id !== task.id)
-          .some((other) => !other.isDone);
-        if (!hasUncheckedOthers && !focusTimerRunning) {
-          toggleFocusTimer();
-        }
-      }
-    });
-
-    const text = document.createElement('p');
-    text.textContent = task.title;
-
-    const remove = document.createElement('button');
-    remove.className = 'icon-btn';
-    remove.title = 'Delete focus task';
-    remove.setAttribute('aria-label', remove.title);
-    remove.textContent = '×';
-    remove.addEventListener('click', async () => {
-      await deleteDoc(task.ref);
-    });
-
-    item.appendChild(toggle);
-    item.appendChild(text);
-    item.appendChild(remove);
-    focusTaskList.appendChild(item);
-  });
-}
-
-function normalizeFocusSnapshotTask(snap) {
-  const data = snap.data();
-  return {
-    id: snap.id,
-    ref: doc(db, snap.ref.path),
-    title: data.title ?? 'Untitled',
-    isDone: Boolean(data.isDone),
-    createdAtSeconds: data.createdAt?.seconds ?? 0,
-  };
-}
-
-async function handleAddFocusTask(user) {
-  const title = focusTaskInput.value.trim();
-  if (!title) return;
-  try {
-    await addDoc(collection(db, 'todo', user.uid, 'focus_tasks'), {
-      title,
-      isDone: false,
-      createdAt: serverTimestamp(),
-    });
-    focusTaskInput.value = '';
-  } catch (e) {
-    const message = e?.message ?? 'Failed to add focus task.';
-    window.alert(message);
-  }
+  if (repeatDailyCheckbox) repeatDailyCheckbox.checked = isRecurringDaily;
 }
 
 function shouldShowTaskForToday(data, today) {
@@ -311,29 +228,178 @@ function shouldShowTaskForToday(data, today) {
   return dateKey <= today;
 }
 
-function closeTaskSheet() {
-  taskSheet.hidden = true;
-  taskSheetBackdrop.hidden = true;
-  selectedTask = null;
+function openAddEditor() {
+  editingTaskRef = null;
+  titleInput.value = '';
+  checklistDraftItems = [];
+  renderChecklistDraftItems();
+  if (checklistItemInput) checklistItemInput.value = '';
+  isRecurringDaily = false;
+  hasReminder = false;
+  reminderTimeInput.value = '09:00';
+  refreshRecurringButton();
+  refreshReminderVisibility();
+  if (composerTitleText) composerTitleText.textContent = 'Add task';
+  if (addTaskBtn) addTaskBtn.textContent = 'Add';
+  setComposerVisibility(true);
 }
 
-function openTaskSheet(task) {
-  selectedTask = task;
-  taskSheet.hidden = false;
-  taskSheetBackdrop.hidden = false;
+function openEditEditor(task) {
+  editingTaskRef = task.ref;
+  titleInput.value = task.title ?? '';
+  checklistDraftItems = (task.checklist ?? []).map((item) => item.text).filter(Boolean);
+  renderChecklistDraftItems();
+  if (checklistItemInput) checklistItemInput.value = '';
+  isRecurringDaily = Boolean(task.isRecurringDaily);
+  hasReminder = Number.isInteger(task.reminderHour) && Number.isInteger(task.reminderMinute);
+  if (hasReminder) {
+    const h = String(task.reminderHour).padStart(2, '0');
+    const m = String(task.reminderMinute).padStart(2, '0');
+    reminderTimeInput.value = `${h}:${m}`;
+  } else {
+    reminderTimeInput.value = '09:00';
+  }
+  refreshRecurringButton();
+  refreshReminderVisibility();
+  if (composerTitleText) composerTitleText.textContent = 'Edit task';
+  if (addTaskBtn) addTaskBtn.textContent = 'Save';
+  setComposerVisibility(true);
+}
+
+function closeTaskActionSheet() {
+  selectedTaskAction = null;
+  if (taskActionSheet) taskActionSheet.hidden = true;
+  if (taskActionBackdrop) taskActionBackdrop.hidden = true;
+}
+
+async function toggleTaskChecklistItem(itemIndex) {
+  if (!selectedTaskAction?.ref || !Array.isArray(selectedTaskAction.checklist)) return;
+  const nextChecklist = selectedTaskAction.checklist.map((item, index) => (
+    index === itemIndex ? { ...item, isDone: !item.isDone } : item
+  ));
+  selectedTaskAction = { ...selectedTaskAction, checklist: nextChecklist };
+  renderTaskActionChecklist();
+  await updateDoc(selectedTaskAction.ref, { checklist: nextChecklist });
+}
+
+function renderTaskActionChecklist() {
+  if (!taskActionChecklist) return;
+  taskActionChecklist.innerHTML = '';
+  const checklist = selectedTaskAction?.checklist ?? [];
+  if (checklist.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'sheet-checklist-empty';
+    li.textContent = 'No checklist items';
+    taskActionChecklist.appendChild(li);
+    return;
+  }
+  checklist.forEach((item, index) => {
+    const li = document.createElement('li');
+    li.className = 'sheet-checklist-item';
+    const label = document.createElement('label');
+    label.className = 'sheet-checklist-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(item.isDone);
+    input.addEventListener('change', () => {
+      toggleTaskChecklistItem(index);
+    });
+    const text = document.createElement('span');
+    text.textContent = item.text;
+    if (item.isDone) text.className = 'done';
+    label.appendChild(input);
+    label.appendChild(text);
+    li.appendChild(label);
+    taskActionChecklist.appendChild(li);
+  });
+}
+
+function openTaskActionSheet(task) {
+  selectedTaskAction = task;
+  renderTaskActionChecklist();
+  if (taskActionSheet) taskActionSheet.hidden = false;
+  if (taskActionBackdrop) taskActionBackdrop.hidden = false;
+}
+
+function renderJournalEntries() {
+  if (!journalList) return;
+  journalList.innerHTML = '';
+  if (journalSnapshots.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'task empty';
+    empty.textContent = 'No journal entries yet.';
+    journalList.appendChild(empty);
+    return;
+  }
+  journalSnapshots.forEach((snap) => {
+    const data = snap.data();
+    const createdAt = data.createdAt?.toDate?.() ?? null;
+    const createdAtText = createdAt
+      ? createdAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : '';
+    const li = document.createElement('li');
+    li.className = 'task';
+    const row = document.createElement('div');
+    row.className = 'task-row';
+    const body = document.createElement('div');
+    body.className = 'task-body';
+    const date = document.createElement('p');
+    date.className = 'journal-date';
+    date.textContent = createdAtText || 'No date';
+    const preview = document.createElement('p');
+    preview.className = 'journal-preview';
+    preview.textContent = data.content || '';
+    body.appendChild(date);
+    body.appendChild(preview);
+    row.appendChild(body);
+    li.appendChild(row);
+    li.addEventListener('click', () => {
+      if (journalDetailDate) journalDetailDate.textContent = createdAtText || 'No date';
+      if (journalDetailContent) journalDetailContent.textContent = data.content || '';
+      if (journalDetailSheet) journalDetailSheet.hidden = false;
+      if (journalDetailBackdrop) journalDetailBackdrop.hidden = false;
+    });
+    journalList.appendChild(li);
+  });
+}
+
+function setActiveTab(tab) {
+  activeTab = tab;
+  const isTasks = tab === 'tasks';
+  if (tasksView) tasksView.hidden = !isTasks;
+  if (journalView) journalView.hidden = isTasks;
+  if (tasksTabBtn) tasksTabBtn.classList.toggle('active', isTasks);
+  if (journalTabBtn) journalTabBtn.classList.toggle('active', !isTasks);
+  if (isTasks) {
+    setJournalComposerVisibility(false);
+    if (addTaskFab) addTaskFab.hidden = !activeUser || isComposerOpen;
+  } else {
+    setComposerVisibility(false);
+    if (addTaskFab) addTaskFab.hidden = true;
+    if (addJournalFab) addJournalFab.hidden = !activeUser;
+  }
 }
 
 function normalizeSnapshotTask(snap) {
   const data = snap.data();
+  const rawChecklist = Array.isArray(data.checklist) ? data.checklist : [];
+  const checklist = rawChecklist
+    .map((item) => ({
+      text: typeof item?.text === 'string' ? item.text.trim() : '',
+      isDone: Boolean(item?.isDone),
+    }))
+    .filter((item) => item.text);
   return {
     id: snap.id,
     ref: doc(db, snap.ref.path),
     title: data.title ?? 'Untitled task',
-    description: data.description ?? '',
     isDone: Boolean(data.isDone),
     isRecurringDaily: Boolean(data.isRecurringDaily),
     dateKey: data.dateKey ?? null,
     createdAtSeconds: data.createdAt?.seconds ?? 0,
+    checklist,
+    reminderHour: data.reminderHour,
+    reminderMinute: data.reminderMinute,
   };
 }
 
@@ -367,16 +433,31 @@ function renderTasks() {
     return;
   }
 
+  let hasRenderedPendingHeader = false;
+  let hasRenderedCompletedHeader = false;
+
   tasks.forEach((task) => {
+    if (!task.isDone && !hasRenderedPendingHeader) {
+      const header = document.createElement('li');
+      header.className = 'task-section-divider';
+      header.textContent = 'Pending';
+      taskList.appendChild(header);
+      hasRenderedPendingHeader = true;
+    }
+    if (task.isDone && !hasRenderedCompletedHeader) {
+      const header = document.createElement('li');
+      header.className = 'task-section-divider';
+      header.textContent = 'Completed';
+      taskList.appendChild(header);
+      hasRenderedCompletedHeader = true;
+    }
+
     const li = document.createElement('li');
     li.className = `task ${task.isDone ? 'done' : ''}`;
     li.title = 'Click to show options';
 
-    const top = document.createElement('div');
-    top.className = 'task-top';
-
-    const left = document.createElement('div');
-    left.className = 'task-main';
+    const row = document.createElement('div');
+    row.className = 'task-row';
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'icon-btn task-toggle';
@@ -391,35 +472,73 @@ function renderTasks() {
     } else {
       toggleBtn.disabled = true;
     }
-    left.appendChild(toggleBtn);
+    row.appendChild(toggleBtn);
+
+    const body = document.createElement('div');
+    body.className = 'task-body';
 
     const title = document.createElement('p');
     title.className = 'task-title';
     title.textContent = task.title;
-    left.appendChild(title);
-    top.appendChild(left);
+    body.appendChild(title);
 
-    const kind = document.createElement('small');
-    kind.textContent = task.isRecurringDaily ? 'Recurring' : 'One-day';
-    top.appendChild(kind);
+    const meta = document.createElement('div');
+    meta.className = 'task-meta';
 
-    li.appendChild(top);
+    const kind = document.createElement('span');
+    kind.className = `task-kind ${task.isRecurringDaily ? 'daily' : 'one-time'}`;
+    kind.textContent = task.isRecurringDaily ? 'Daily' : 'One-time';
+    meta.appendChild(kind);
 
-    const desc = document.createElement('p');
-    desc.className = 'task-desc';
-    desc.textContent = task.description || 'No description';
-    li.appendChild(desc);
+    const secondary = document.createElement('span');
+    secondary.className = 'task-secondary';
+    secondary.textContent = task.checklist.length > 0
+      ? `Checklist: ${task.checklist.filter((item) => item.isDone).length}/${task.checklist.length} done`
+      : 'Task';
+    meta.appendChild(secondary);
+
+    body.appendChild(meta);
+    row.appendChild(body);
+    li.appendChild(row);
     if (task.ref) {
       li.addEventListener('click', () => {
-        openTaskSheet({
-          ref: task.ref,
-          title: task.title,
-          description: task.description,
-        });
+        openTaskActionSheet(task);
       });
     }
     taskList.appendChild(li);
   });
+}
+
+function renderChecklistDraftItems() {
+  if (!checklistDraftList) return;
+  checklistDraftList.innerHTML = '';
+  if (checklistDraftItems.length === 0) return;
+  checklistDraftItems.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'checklist-draft-item';
+    const text = document.createElement('span');
+    text.textContent = item;
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'checklist-draft-remove';
+    removeBtn.textContent = '×';
+    removeBtn.setAttribute('aria-label', 'Remove checklist item');
+    removeBtn.addEventListener('click', () => {
+      checklistDraftItems.splice(index, 1);
+      renderChecklistDraftItems();
+    });
+    row.appendChild(text);
+    row.appendChild(removeBtn);
+    checklistDraftList.appendChild(row);
+  });
+}
+
+function addChecklistDraftItem(rawText) {
+  const item = (rawText ?? '').trim();
+  if (!item) return;
+  if (checklistDraftItems.includes(item)) return;
+  checklistDraftItems.push(item);
+  renderChecklistDraftItems();
 }
 
 async function handleAuthSubmit() {
@@ -436,12 +555,12 @@ async function handleAuthSubmit() {
   }
 }
 
-function handleAddTask(user) {
+async function handleAddTask(user) {
   const title = titleInput.value.trim();
   if (!title) return;
 
-  const description = descInput.value.trim();
-  const selectedDate = parseDateInput(dateInput.value) ?? new Date();
+  const checklistItems = [...checklistDraftItems];
+  const selectedDate = (currentToday && parseDayKey(currentToday)) || parseDateInput(dateInput?.value) || new Date();
   const selectedDayKey = dayKey(selectedDate);
   const today = dayKey(new Date());
   const reminderTime = parseTimeInput(reminderTimeInput.value);
@@ -455,20 +574,24 @@ function handleAddTask(user) {
       )
     : null;
 
-  pendingTasks.push({
-    id: `pending-${Date.now()}`,
-    ref: null,
-    title,
-    description,
-    isDone: false,
-    isRecurringDaily,
-    dateKey: selectedDayKey,
-    createdAtSeconds: Date.now() / 1000,
-  });
+  if (!editingTaskRef) {
+    pendingTasks.push({
+      id: `pending-${Date.now()}`,
+      ref: null,
+      title,
+      isDone: false,
+      isRecurringDaily,
+      dateKey: selectedDayKey,
+      createdAtSeconds: Date.now() / 1000,
+      checklist: checklistItems.map((text) => ({ text, isDone: false })),
+    });
+  }
 
   titleInput.value = '';
-  descInput.value = '';
-  dateInput.value = today;
+  checklistDraftItems = [];
+  renderChecklistDraftItems();
+  if (checklistItemInput) checklistItemInput.value = '';
+  if (dateInput) dateInput.value = today;
   isRecurringDaily = false;
   hasReminder = false;
   reminderTimeInput.value = '09:00';
@@ -478,13 +601,15 @@ function handleAddTask(user) {
 
   const taskData = {
     title,
-    description,
     isDone: false,
     isRecurringDaily,
     dateKey: selectedDayKey,
     lastResetOn: today,
     createdAt: serverTimestamp(),
   };
+  if (checklistItems.length > 0) {
+    taskData.checklist = checklistItems.map((itemText) => ({ text: itemText, isDone: false }));
+  }
 
   if (hasValidReminder) {
     taskData.reminderHour = reminderTime.hour;
@@ -493,7 +618,17 @@ function handleAddTask(user) {
     taskData.reminderPending = true;
   }
 
-  addDoc(collection(db, 'todo', user.uid, 'tasks'), taskData);
+  if (editingTaskRef) {
+    taskData.reminderHour = hasValidReminder ? reminderTime.hour : null;
+    taskData.reminderMinute = hasValidReminder ? reminderTime.minute : null;
+    taskData.remindAt = hasValidReminder ? remindAt : null;
+    taskData.reminderPending = Boolean(hasValidReminder);
+    await updateDoc(editingTaskRef, taskData);
+  } else {
+    await addDoc(collection(db, 'todo', user.uid, 'tasks'), taskData);
+  }
+  editingTaskRef = null;
+  setComposerVisibility(false);
 }
 
 function setSignedInUI(signedIn) {
@@ -501,6 +636,9 @@ function setSignedInUI(signedIn) {
   authSection.hidden = signedIn;
   todoSection.hidden = !signedIn;
   logoutBtn.hidden = !signedIn;
+  if (!signedIn) {
+    setComposerVisibility(false);
+  }
 }
 
 function setLoadingUI() {
@@ -510,34 +648,47 @@ function setLoadingUI() {
   logoutBtn.hidden = true;
 }
 
-function setPomodoroVisibility(open) {
-  isPomodoroOpen = open;
-  focusSection.hidden = !open;
-  taskList.hidden = open;
-  pomodoroPeekBtn.hidden = open;
-  const composer = document.querySelector('.composer');
-  if (composer) {
-    composer.hidden = open;
+function setTaskComposerVisibility(open) {
+  taskList.hidden = !open;
+  if (!open) {
+    setComposerVisibility(false);
+    return;
   }
-  if (open) {
-    syncPomodoroFromBackground();
-    startFocusRefresh();
-  } else {
-    stopFocusRefresh();
+  if (addTaskFab && activeUser && !isComposerOpen) {
+    addTaskFab.hidden = false;
   }
 }
 
-focusStartPauseBtn.addEventListener('click', toggleFocusTimer);
-focusResetBtn.addEventListener('click', resetFocusTimer);
-focusApplyDurationBtn.addEventListener('click', applyFocusDuration);
-focusDurationInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    applyFocusDuration();
-  }
+closeComposerBtn.addEventListener('click', () => setComposerVisibility(false));
+composerBackdrop.addEventListener('click', () => setComposerVisibility(false));
+addTaskFab.addEventListener('click', () => openAddEditor());
+taskActionCancelBtn.addEventListener('click', closeTaskActionSheet);
+taskActionBackdrop.addEventListener('click', closeTaskActionSheet);
+taskActionEditBtn.addEventListener('click', () => {
+  if (!selectedTaskAction) return;
+  const task = selectedTaskAction;
+  closeTaskActionSheet();
+  openEditEditor(task);
 });
-pomodoroPeekBtn.addEventListener('click', () => setPomodoroVisibility(true));
-closeFocusPanelBtn.addEventListener('click', () => setPomodoroVisibility(false));
+taskActionDeleteBtn.addEventListener('click', async () => {
+  if (!selectedTaskAction?.ref) return;
+  const taskRef = selectedTaskAction.ref;
+  closeTaskActionSheet();
+  await deleteDoc(taskRef);
+});
+journalDetailCloseBtn.addEventListener('click', () => {
+  if (journalDetailSheet) journalDetailSheet.hidden = true;
+  if (journalDetailBackdrop) journalDetailBackdrop.hidden = true;
+});
+journalDetailBackdrop.addEventListener('click', () => {
+  if (journalDetailSheet) journalDetailSheet.hidden = true;
+  if (journalDetailBackdrop) journalDetailBackdrop.hidden = true;
+});
+tasksTabBtn.addEventListener('click', () => setActiveTab('tasks'));
+journalTabBtn.addEventListener('click', () => setActiveTab('journal'));
+addJournalFab.addEventListener('click', () => setJournalComposerVisibility(true));
+closeJournalComposerBtn.addEventListener('click', () => setJournalComposerVisibility(false));
+journalComposerBackdrop.addEventListener('click', () => setJournalComposerVisibility(false));
 
 authSubmitBtn.addEventListener('click', handleAuthSubmit);
 switchModeBtn.addEventListener('click', () => {
@@ -547,68 +698,80 @@ switchModeBtn.addEventListener('click', () => {
   authError.hidden = true;
 });
 logoutBtn.addEventListener('click', async () => signOut(auth));
-sheetCancelBtn.addEventListener('click', closeTaskSheet);
-taskSheetBackdrop.addEventListener('click', closeTaskSheet);
-sheetEditBtn.addEventListener('click', async () => {
-  if (!selectedTask) return;
-  const editedTitle = window.prompt('Edit title', selectedTask.title);
-  if (editedTitle === null) return;
-  const nextTitle = editedTitle.trim();
-  if (!nextTitle) return;
-  const editedDescription = window.prompt('Edit description', selectedTask.description);
-  if (editedDescription === null) return;
-  await updateDoc(selectedTask.ref, {
-    title: nextTitle,
-    description: editedDescription.trim(),
+if (repeatDailyCheckbox) {
+  repeatDailyCheckbox.addEventListener('change', () => {
+    isRecurringDaily = repeatDailyCheckbox.checked;
+    refreshRecurringButton();
   });
-  closeTaskSheet();
-});
-sheetDeleteBtn.addEventListener('click', async () => {
-  if (!selectedTask) return;
-  await deleteDoc(selectedTask.ref);
-  closeTaskSheet();
-});
-alarmBtn.addEventListener('click', () => {
-  hasReminder = !hasReminder;
-  if (hasReminder && !parseTimeInput(reminderTimeInput.value)) {
-    reminderTimeInput.value = '09:00';
-  }
-  refreshReminderVisibility();
-  if (hasReminder) {
-    if (typeof reminderTimeInput.showPicker === 'function') {
-      reminderTimeInput.showPicker();
-    } else {
-      reminderTimeInput.focus();
+}
+if (reminderToggle) {
+  reminderToggle.addEventListener('change', () => {
+    hasReminder = reminderToggle.checked;
+    if (hasReminder && !parseTimeInput(reminderTimeInput.value)) {
+      reminderTimeInput.value = '09:00';
     }
-  }
+    refreshReminderVisibility();
+  });
+}
+if (checklistItemInput) {
+  checklistItemInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    addChecklistDraftItem(checklistItemInput.value);
+    checklistItemInput.value = '';
+  });
+}
+if (dateInput) {
+  dateInput.addEventListener('change', () => {
+    const selected = parseDateInput(dateInput.value);
+    if (!selected) return;
+    currentToday = dayKey(selected);
+    renderDateStrip();
+    renderTasks();
+  });
+}
+saveJournalBtn.addEventListener('click', async () => {
+  if (!activeUser) return;
+  const title = (journalTitleInput.value || '').trim();
+  const content = (journalBodyInput.value || '').trim();
+  if (!title && !content) return;
+  await addDoc(collection(db, 'todo', activeUser.uid, 'journal_entries'), {
+    title,
+    content,
+    createdAt: serverTimestamp(),
+  });
+  journalTitleInput.value = '';
+  journalBodyInput.value = '';
+  setJournalComposerVisibility(false);
 });
-recurringBtn.addEventListener('click', () => {
-  isRecurringDaily = !isRecurringDaily;
-  refreshRecurringButton();
+calendarPrevBtn.addEventListener('click', () => {
+  if (!currentToday) return;
+  currentToday = dayKey(shiftDate(parseDayKey(currentToday), -1));
+  if (dateInput) dateInput.value = currentToday;
+  renderDateStrip();
+  renderTasks();
+});
+calendarNextBtn.addEventListener('click', () => {
+  if (!currentToday) return;
+  currentToday = dayKey(shiftDate(parseDayKey(currentToday), 1));
+  if (dateInput) dateInput.value = currentToday;
+  renderDateStrip();
+  renderTasks();
 });
 
 setLoadingUI();
 onAuthStateChanged(auth, (user) => {
-  setLoadingUI();
-  stopFocusRefresh();
-  if (!user && typeof chrome?.runtime?.sendMessage === 'function') {
-    chrome.runtime.sendMessage({ action: 'pomodoro_reset' });
-  }
   if (stopTasksListener) {
     stopTasksListener();
     stopTasksListener = null;
   }
-  if (stopFocusTasksListener) {
-    stopFocusTasksListener();
-    stopFocusTasksListener = null;
+  if (stopJournalListener) {
+    stopJournalListener();
+    stopJournalListener = null;
   }
-
   if (!user) {
     activeUser = null;
-    closeTaskSheet();
-    focusSnapshotTasks = [];
-    renderFocusTasks();
-    setPomodoroVisibility(false);
+    setTaskComposerVisibility(true);
     setSignedInUI(false);
     return;
   }
@@ -617,35 +780,26 @@ onAuthStateChanged(auth, (user) => {
   activeUser = user;
   currentToday = dayKey(new Date());
   dateInput.value = currentToday;
+  renderDateStrip();
   isRecurringDaily = false;
   hasReminder = false;
   refreshRecurringButton();
   refreshReminderVisibility();
   pendingTasks = [];
-  focusSnapshotTasks = [];
-  focusDurationInput.value = String(focusDurationMinutes);
-  syncPomodoroFromBackground();
-  renderFocusTasks();
-  setPomodoroVisibility(false);
+  journalSnapshots = [];
+  setTaskComposerVisibility(true);
+  setActiveTab(activeTab);
   const q = query(collection(db, 'todo', user.uid, 'tasks'), orderBy('createdAt', 'desc'));
   stopTasksListener = onSnapshot(q, (snapshot) => {
     snapshotTasks = snapshot.docs;
     renderTasks();
   });
-  const focusQ = query(
-    collection(db, 'todo', user.uid, 'focus_tasks'),
-    orderBy('createdAt', 'asc')
-  );
-  stopFocusTasksListener = onSnapshot(focusQ, (snapshot) => {
-    focusSnapshotTasks = snapshot.docs.map(normalizeFocusSnapshotTask);
-    renderFocusTasks();
+  const jq = query(collection(db, 'todo', user.uid, 'journal_entries'), orderBy('createdAt', 'desc'));
+  stopJournalListener = onSnapshot(jq, (snapshot) => {
+    journalSnapshots = snapshot.docs;
+    renderJournalEntries();
   });
-
   addTaskBtn.onclick = () => handleAddTask(user);
-  focusTaskForm.onsubmit = async (e) => {
-    e.preventDefault();
-    await handleAddFocusTask(user);
-  };
   titleInput.onkeypress = null;
   titleInput.onkeydown = (e) => {
     if (e.key === 'Enter') {
@@ -659,5 +813,4 @@ onAuthStateChanged(auth, (user) => {
       handleAddTask(user);
     }
   };
-  focusTaskInput.onkeydown = null;
 });

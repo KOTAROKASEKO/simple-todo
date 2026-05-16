@@ -3,11 +3,17 @@
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: linear-gradient(180deg, #f6f7fb 0%, #eef2f7 100%);
-  min-height: 100vh;
+  min-height: 100%;
   color: #101828;
+  overflow: hidden;
 }
 
 [hidden] {
@@ -16,19 +22,26 @@ body {
 
 .container {
   width: 380px;
-  min-height: 100vh;
+  height: 100vh;
   padding: 14px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
   position: relative;
+  overflow: hidden;
 }
 
 .header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 h1 {
@@ -132,6 +145,184 @@ button.ghost {
   flex: 1;
   min-height: 0;
   gap: 10px;
+  position: relative;
+  padding-bottom: 58px;
+  overflow: hidden;
+}
+
+#tasksView,
+#journalView {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+  padding-bottom: 62px;
+  overflow: hidden;
+}
+
+.journal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.journal-date {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #667085;
+}
+
+.journal-preview {
+  margin: 0;
+  font-size: 13px;
+  color: #344054;
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+}
+
+.bottom-tabbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52px;
+  display: flex;
+  border-top: 1px solid #e4e7ec;
+  background: rgba(255, 255, 255, 0.98);
+  z-index: 60;
+}
+
+.tab-btn {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.tab-btn.active {
+  color: #2f6df6;
+  box-shadow: inset 0 -3px 0 #2f6df6;
+  background: linear-gradient(180deg, rgba(47, 109, 246, 0.06) 0%, rgba(47, 109, 246, 0) 100%);
+}
+
+.calendar-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendar-month-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475467;
+}
+
+.calendar-nav-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 18px;
+  padding: 0;
+}
+
+.date-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.date-chip {
+  width: 56px;
+  min-width: 56px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #fff;
+  color: #344054;
+  padding: 6px 4px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.date-chip-weekday {
+  font-size: 10px;
+  color: #667085;
+  font-weight: 600;
+}
+
+.date-chip-day {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.date-chip.active {
+  background: #2f6df6;
+  border-color: #2f6df6;
+  color: #fff;
+}
+
+.date-chip.active .date-chip-weekday {
+  color: #dbe6ff;
+}
+
+.webapp-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e4e7ec;
+  border-radius: 14px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.webapp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.webapp-header p {
+  margin: 0;
+  font-size: 12px;
+  color: #475467;
+  font-weight: 600;
+}
+
+#webAppFrame {
+  width: 100%;
+  min-height: 520px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .pomodoro-peek {
@@ -286,21 +477,35 @@ button.ghost {
   margin: 0;
   padding: 0;
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 8px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.task-section-divider {
+  list-style: none;
+  margin: 4px 2px 0;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .task {
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid #e4e7ec;
-  border-radius: 12px;
-  padding: 10px;
-  display: grid;
-  gap: 6px;
+  border-radius: 14px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  box-shadow: 0 1px 1px rgba(16, 24, 40, 0.05);
 }
 
 .task:hover {
@@ -313,31 +518,23 @@ button.ghost {
   padding: 14px 10px;
 }
 
-.task-top {
+.task-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  width: 100%;
   gap: 8px;
 }
 
-.task-top small {
-  color: #667085;
-  font-size: 11px;
-  padding: 2px 8px;
-  background: #f2f4f7;
-  border-radius: 999px;
-}
-
-.task-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.task-body {
   min-width: 0;
+  display: grid;
+  gap: 5px;
+  flex: 1;
 }
 
 .task-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: #101828;
 }
@@ -347,36 +544,133 @@ button.ghost {
   color: #98a2b3;
 }
 
-.task-desc {
-  margin: 0;
-  font-size: 12px;
-  color: #475467;
-  white-space: pre-wrap;
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-kind {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 8px;
+  line-height: 1;
+}
+
+.task-kind.daily {
+  background: #eaf2ff;
+  color: #2d63d5;
+}
+
+.task-kind.one-time {
+  background: #effaf2;
+  color: #23844b;
+}
+
+.task-secondary {
+  min-width: 0;
+  font-size: 13px;
+  color: #667085;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer {
-  position: sticky;
-  bottom: 0;
-  margin-top: 4px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #e4e7ec;
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.98);
   border-radius: 14px;
   backdrop-filter: blur(8px);
-  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.08);
+  box-shadow: 0 16px 36px rgba(16, 24, 40, 0.18);
+  align-content: start;
+  animation: editor-slide-in 180ms ease-out;
+}
+
+.composer-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.18);
+  border-radius: 14px;
+}
+
+.composer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.composer-close-btn {
+  width: auto;
+  min-width: 74px;
+  padding: 7px 10px;
 }
 
 .composer-title {
-  margin: 0 0 2px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #667085;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #101828;
 }
 
 .composer-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #344054;
+}
+
+.switch-row input[type='checkbox'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #2f6df6;
+}
+
+.checklist-draft-list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.checklist-draft-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #344054;
+  background: #fff;
+}
+
+.checklist-draft-remove {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  padding: 0;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .title-input-wrap {
@@ -439,19 +733,57 @@ button.ghost {
   color: #fff;
 }
 
-.task-toggle {
-  font-size: 13px;
-  font-weight: 700;
-  width: 28px;
-  min-width: 28px;
-  height: 28px;
+.add-task-fab {
+  position: absolute;
+  right: 16px;
+  bottom: 72px;
+  width: 56px;
+  min-width: 56px;
+  height: 56px;
   border-radius: 999px;
+  border: 0;
+  padding: 0;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 500;
+  color: #fff;
+  background: #2f6df6;
+  box-shadow: 0 10px 20px rgba(47, 109, 246, 0.4);
+  z-index: 25;
+}
+
+.add-task-fab:hover {
+  filter: brightness(1.03);
+}
+
+@keyframes editor-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.task-toggle {
+  font-size: 11px;
+  font-weight: 700;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  padding: 0;
+  border-color: #cfd4dc;
+  background: #ffffff;
+  color: transparent;
 }
 
 .task.done .task-toggle {
-  background: #eef2ff;
-  border-color: #c7d2fe;
-  color: #3b4cca;
+  background: #2f6df6;
+  border-color: #2f6df6;
+  color: #ffffff;
 }
 
 .error {
@@ -480,4 +812,97 @@ button.ghost {
   gap: 8px;
   z-index: 10;
   box-shadow: 0 12px 28px rgba(16, 24, 40, 0.2);
+}
+
+.sheet-task-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #101828;
+}
+
+.sheet-task-description {
+  margin: 0;
+  font-size: 13px;
+  color: #475467;
+}
+
+.sheet-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sheet-checklist-item {
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 0;
+  font-size: 13px;
+  color: #344054;
+  background: #fff;
+}
+
+.sheet-checklist-item.done {
+  text-decoration: line-through;
+  color: #98a2b3;
+}
+
+.sheet-checklist-empty {
+  color: #98a2b3;
+  font-size: 12px;
+}
+
+.sheet-edit-form {
+  display: grid;
+  gap: 8px;
+}
+
+.journal-detail-content {
+  margin: 0;
+  font-size: 13px;
+  color: #344054;
+  white-space: pre-wrap;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.task-action-sheet {
+  z-index: 20;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.sheet-checklist-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  font-size: 13px;
+  color: #344054;
+}
+
+.sheet-checklist-toggle input[type='checkbox'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #2f6df6;
+}
+
+.sheet-checklist-toggle span.done {
+  text-decoration: line-through;
+  color: #98a2b3;
+}
+
+.sheet-checklist-toggle span {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  line-height: 1.35;
 }
