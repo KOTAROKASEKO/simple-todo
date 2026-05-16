@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy - SimpleTodo Companion</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f9f9f9;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            color: #2c3e50;
+        }
+        h2 {
+            margin-top: 30px;
+            color: #2c3e50;
+            border-left: 4px solid #3498db;
+            padding-left: 15px;
+        }
+        h3 {
+            color: #34495e;
+            margin-top: 20px;
+        }
+        p, ul {
+            margin-bottom: 15px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        .footer {
+            margin-top: 50px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-align: center;
+        }
+        .highlight {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+        code {
+            background-color: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Privacy Policy</h1>
+        <p><strong>Product Name:</strong> SimpleTodo Companion</p>
+        <p><strong>Last Updated:</strong> May 16, 2026</p>
+
+        <p>SimpleTodo Companion (hereinafter referred to as "the Extension") respects your privacy and is committed to protecting your personal information. This policy explains what information the Extension collects, how it is used, and how it is protected.</p>
+
+        <h2>1. Information Collection and Purpose</h2>
+        <p>The Extension uses Google Firebase (Project ID: <code>simpletodo-19a48</code>) to synchronize and store data. We collect and use the following information solely to provide task management and journaling features:</p>
+        
+        <h3>Account Information</h3>
+        <ul>
+            <li><strong>Email Address and Password:</strong> Used for user authentication and data synchronization via Firebase Authentication.</li>
+        </ul>
+
+        <h3>User Content (Stored in Cloud Firestore)</h3>
+        <ul>
+            <li><strong>Task Data:</strong> Includes titles, completion status, daily recurrence settings, due dates, and checklists (item names and completion flags).</li>
+            <li><strong>Reminder Settings:</strong> Stores specific times (hours/minutes) and scheduled reminder timestamps (<code>remindAt</code>). <em>Note: The Extension itself does not display notifications; it only manages the data storage.</em></li>
+            <li><strong>Journal Entries:</strong> Includes titles, body content, and creation timestamps.</li>
+        </ul>
+
+        <h2>2. Data Storage and Synchronization</h2>
+        <p>Data created or edited within the Extension is stored in Google Firebase (Cloud Firestore). This enables real-time synchronization with the mobile application "SimpleTodo" when using the same account.</p>
+
+        <h2>3. Chrome Extension Permissions</h2>
+        <p>The Extension requires the following permissions to function (Manifest V3):</p>
+        <ul>
+            <li><strong>sidePanel:</strong> To display the user interface within the browser's side panel.</li>
+            <li><strong>storage:</strong> To maintain your sign-in state and save necessary local application settings.</li>
+        </ul>
+
+        <h2>4. Strict Privacy Protections</h2>
+        <div class="highlight">
+            <p>To ensure user trust, the Extension strictly adheres to the following principles:</p>
+            <ul>
+                <li><strong>No Browsing History Collection:</strong> We do not access or collect your web browsing history, tab contents, or any data from the websites you visit.</li>
+                <li><strong>No Tracking:</strong> We do not use content scripts to track your behavior on any website.</li>
+                <li><strong>No Sale of Data:</strong> We never sell your personal information or share it with third parties for advertising purposes.</li>
+                <li><strong>No Ads:</strong> No third-party advertising networks are integrated into the Extension.</li>
+                <li><strong>No External Scripts:</strong> All processing is performed by programs bundled within the Extension package; we do not load scripts from external CDNs.</li>
+            </ul>
+        </div>
+
+        <h2>5. Third-Party Services</h2>
+        <p>The Extension utilizes Google Firebase as its infrastructure. Data handling by Firebase is subject to the Google Privacy Policy. The Extension itself does not use Google Analytics or any other third-party tracking tools.</p>
+
+        <h2>6. Data Management and Deletion</h2>
+        <p>Users can add, edit, or delete their data at any time through the Extension interface. If you wish to delete your account and all associated data permanently, please contact us at the address below.</p>
+
+        <h2>7. Contact Us</h2>
+        <p>If you have any questions about this Privacy Policy or the handling of your data, please contact:</p>
+        <p>
+            <strong>Operator:</strong> [Your Name or Company Name]<br>
+            <strong>Email:</strong> <a href="mailto:support@yourdomain.com">support@yourdomain.com</a>
+        </p>
+
+        <div class="footer">
+            &copy; 2026 SimpleTodo Companion. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>

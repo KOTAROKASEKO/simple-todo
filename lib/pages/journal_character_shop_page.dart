@@ -65,24 +65,34 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final scheme = Theme.of(context).colorScheme;
+    final coinAccent = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0xFFFFD66A)
+        : const Color(0xFFE65100);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 1,
         title: Text(
           'AI characters',
           style: TextStyle(
-            color: Colors.grey.shade800,
+            color: scheme.onSurface,
             fontWeight: FontWeight.w600,
             fontSize: 18,
           ),
         ),
-        iconTheme: IconThemeData(color: Colors.grey.shade700),
+        iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
       ),
       body: uid == null
-          ? const Center(child: Text('Sign in to unlock voices.'))
+          ? Center(
+              child: Text(
+                'Sign in to unlock voices.',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+            )
           : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
                   .collection('todo')
@@ -94,6 +104,10 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                 final unlocked = parseUnlockedJournalCharacters(
                   data['unlockedJournalAiCharacters'],
                 );
+                final cardFill = scheme.surfaceContainerHighest;
+                final borderCol = scheme.outline;
+                final positive = const Color(0xFF2E7D32);
+                final positiveMuted = scheme.onSurfaceVariant;
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                   children: [
@@ -101,7 +115,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                       children: [
                         Icon(
                           Icons.toll_rounded,
-                          color: Colors.amber.shade800,
+                          color: coinAccent,
                           size: 22,
                         ),
                         const SizedBox(width: 8),
@@ -110,7 +124,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: Colors.amber.shade900,
+                            color: coinAccent,
                           ),
                         ),
                       ],
@@ -122,7 +136,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                       style: TextStyle(
                         fontSize: 14,
                         height: 1.45,
-                        color: Colors.grey.shade700,
+                        color: scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -137,13 +151,13 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Material(
-                          color: Colors.white,
+                          color: cardFill,
                           borderRadius: BorderRadius.circular(16),
                           elevation: 0,
                           child: Container(
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.grey.shade200),
+                              border: Border.all(color: borderCol),
                             ),
                             padding: const EdgeInsets.all(16),
                             child: Row(
@@ -164,7 +178,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                                         style: TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.w600,
-                                          color: Colors.grey.shade900,
+                                          color: scheme.onSurface,
                                         ),
                                       ),
                                       const SizedBox(height: 4),
@@ -177,10 +191,10 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: isFree
-                                              ? Colors.green.shade700
+                                              ? positive
                                               : locked
-                                                  ? Colors.amber.shade800
-                                                  : Colors.grey.shade600,
+                                                  ? coinAccent
+                                                  : positiveMuted,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -190,7 +204,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                                 if (isFree)
                                   Icon(
                                     Icons.check_circle_rounded,
-                                    color: Colors.green.shade600,
+                                    color: positive,
                                     size: 28,
                                   )
                                 else if (locked)
@@ -199,12 +213,12 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                                         ? null
                                         : () => _unlock(id),
                                     child: busy
-                                        ? const SizedBox(
+                                        ? SizedBox(
                                             width: 20,
                                             height: 20,
                                             child: CircularProgressIndicator(
                                               strokeWidth: 2,
-                                              color: Colors.white,
+                                              color: scheme.onPrimary,
                                             ),
                                           )
                                         : const Text('Unlock'),
@@ -212,7 +226,7 @@ class _JournalCharacterShopPageState extends State<JournalCharacterShopPage> {
                                 else
                                   Icon(
                                     Icons.check_circle_rounded,
-                                    color: Colors.green.shade600,
+                                    color: positive,
                                     size: 28,
                                   ),
                               ],

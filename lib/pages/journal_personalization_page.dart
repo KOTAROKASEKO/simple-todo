@@ -308,21 +308,29 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final blendBorder = Theme.of(context).scaffoldBackgroundColor;
+    final fieldFill = scheme.surfaceContainerHighest;
+    final cardSurface = scheme.surface;
+    final coinAccent = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0xFFFFD66A)
+        : const Color(0xFFE65100);
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: cardSurface,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 1,
         title: Text(
           'Journal AI notes',
           style: TextStyle(
-            color: Colors.grey.shade800,
+            color: scheme.onSurface,
             fontWeight: FontWeight.w600,
             fontSize: 18,
           ),
         ),
-        iconTheme: IconThemeData(color: Colors.grey.shade700),
+        iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
         actions: [
           if (!_loading)
             TextButton(
@@ -333,14 +341,14 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Colors.indigo.shade600,
+                        color: scheme.primary,
                       ),
                     )
                   : Text(
                       'Save',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: Colors.indigo.shade700,
+                        color: scheme.primary,
                       ),
                     ),
             ),
@@ -358,27 +366,29 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 14,
                       height: 1.45,
-                      color: Colors.grey.shade700,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: _personalizationController,
-                    maxLines: null,
                     minLines: 8,
+                    maxLines: 18,
                     maxLength: _kJournalPersonalizationMaxChars,
                     keyboardType: TextInputType.multiline,
+                    style: TextStyle(color: scheme.onSurface),
                     decoration: InputDecoration(
                       hintText: '例：ユーモア多めで。短めが好き。仕事のジャーナルでは実務寄りで…',
+                      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: fieldFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                     ),
                   ),
@@ -388,7 +398,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
+                      color: scheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -397,7 +407,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 12,
                       height: 1.35,
-                      color: Colors.grey.shade600,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -406,13 +416,15 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Colors.amber.shade900,
+                      color: coinAccent,
                     ),
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
                     key: ValueKey<String>(_character),
-                    initialValue: _character,
+                    initialValue: _kJournalAiCharacterLabels.containsKey(_character)
+                        ? _character
+                        : kJournalAiDefaultCharacterId,
                     items: _kJournalAiCharacterLabels.entries.map((e) {
                       final locked = !isJournalCharacterUnlockedForList(
                         e.key,
@@ -429,7 +441,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                                 child: Icon(
                                   Icons.lock_outline_rounded,
                                   size: 18,
-                                  color: Colors.grey.shade600,
+                                  color: scheme.onSurfaceVariant,
                                 ),
                               ),
                             Expanded(
@@ -439,8 +451,8 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                                     : e.value,
                                 style: TextStyle(
                                   color: locked
-                                      ? Colors.grey.shade600
-                                      : Colors.grey.shade900,
+                                      ? scheme.onSurfaceVariant
+                                      : scheme.onSurface,
                                 ),
                               ),
                             ),
@@ -449,16 +461,18 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                       );
                     }).toList(),
                     onChanged: _loading || _saving ? null : _onCharacterDropdownChanged,
+                    dropdownColor: cardSurface,
+                    style: TextStyle(color: scheme.onSurface),
                     decoration: InputDecoration(
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: fieldFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                     ),
                   ),
@@ -468,7 +482,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
+                      color: scheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -480,12 +494,12 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.35,
-                      color: Colors.grey.shade600,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 12),
                   Material(
-                    color: Colors.white,
+                    color: fieldFill,
                     borderRadius: BorderRadius.circular(12),
                     child: SwitchListTile(
                       contentPadding: const EdgeInsets.symmetric(
@@ -496,7 +510,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                         'Remind me to write',
                         style: TextStyle(
                           fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade800,
+                          color: scheme.onSurface,
                         ),
                       ),
                       value: kIsWeb ? false : _dailyJournalReminderEnabled,
@@ -512,19 +526,22 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     controller: _reminderGreetingController,
                     maxLength: _kJournalReminderGreetingMaxChars,
                     enabled: !kIsWeb && _dailyJournalReminderEnabled,
+                    style: TextStyle(color: scheme.onSurface),
                     decoration: InputDecoration(
                       labelText:
                           '呼ばれたい名前（通知・AI返信。ジャーナル保存時のキャラ選択でも設定可）',
                       hintText: '例：ねね',
+                      labelStyle: TextStyle(color: scheme.onSurfaceVariant),
+                      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: fieldFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                     ),
                   ),
@@ -535,17 +552,25 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                           ? null
                           : _sendTestJournalReminder,
                       icon: _sendingTestReminder
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
                             )
-                          : const Icon(Icons.notifications_active_outlined,
-                              size: 20),
+                          : Icon(
+                              Icons.notifications_active_outlined,
+                              size: 20,
+                              color: scheme.primary,
+                            ),
                       label: Text(
                         _sendingTestReminder ? 'Sending…' : 'Send test reminder',
+                        style: TextStyle(color: scheme.primary),
                       ),
                       style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: scheme.outline),
                         padding: const EdgeInsets.symmetric(
                           vertical: 12,
                           horizontal: 16,
@@ -562,7 +587,7 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
+                      color: scheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -570,27 +595,29 @@ class _JournalPersonalizationPageState extends State<JournalPersonalizationPage>
                     'AI が毎回参照する重要情報を JSON で保存します（例: goals, preferences, constraints）。',
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.grey.shade600,
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _importantProfileController,
-                    maxLines: null,
                     minLines: 8,
+                    maxLines: 18,
                     maxLength: _kJournalImportantProfileMaxChars,
                     keyboardType: TextInputType.multiline,
+                    style: TextStyle(color: scheme.onSurface),
                     decoration: InputDecoration(
                       hintText: '{\n  "goals": ["..."],\n  "preferences": {"tone": "short"}\n}',
+                      hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: fieldFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: blendBorder),
                       ),
                     ),
                   ),

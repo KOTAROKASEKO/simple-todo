@@ -11,14 +11,14 @@ val newBuildDir: Directory =
         .get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
-// isar_flutter_libs: low compileSdk causes release AAPT "android:attr/lStar not found".
-fun org.gradle.api.Project.applyLibraryCompileSdk35() {
+// Force library modules to API 36 for plugins using newer Android symbols.
+fun org.gradle.api.Project.applyLibraryCompileSdk36() {
     if (!plugins.hasPlugin("com.android.library")) {
         return
     }
     val androidExt = extensions.findByName("android") ?: return
     val intType = Int::class.javaPrimitiveType!!
-    val target = 35
+    val target = 36
     for (name in listOf("setCompileSdk", "setCompileSdkVersion")) {
         try {
             androidExt.javaClass.getMethod(name, intType).invoke(androidExt, target)
@@ -39,10 +39,10 @@ subprojects {
 // evaluationDependsOn(":app") can leave plugins already evaluated; late afterEvaluate then throws.
 subprojects {
     if (project.state.executed) {
-        project.applyLibraryCompileSdk35()
+        project.applyLibraryCompileSdk36()
     } else {
         project.afterEvaluate {
-            project.applyLibraryCompileSdk35()
+            project.applyLibraryCompileSdk36()
         }
     }
 }

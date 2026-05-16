@@ -1,15 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' show log;
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
+import 'package:path_provider/path_provider.dart';
 
-import 'firestore_update_utils.dart';
+import 'package:simpletodo_data_core/simpletodo_data_core.dart'
+    show
+        LocalTask,
+        TaskChecklistItem,
+        TaskLocalStore,
+        flattenFirestoreUpdateData,
+        isFirestoreFieldValueDelete;
 import 'isar/app_isar_io.dart';
 import 'isar/task_doc.dart';
-import 'models/local_task.dart';
-import 'task_local_store.dart';
+
 
 /// Clears shared app Isar (tasks + journals) on sign-out.
 Future<void> clearTaskIsarOnLogout() => clearAppIsarOnLogout();
@@ -194,6 +201,8 @@ class TaskStore implements TaskLocalStore {
 
   Isar? _isar;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firebaseSub;
+  bool _drainingPendingOps = false;
+  final Set<String> _inFlightOpIds = <String>{};
 
   /// Rebuild UI when any [TaskDoc] changes.
   Stream<void> get changes {
@@ -201,12 +210,18 @@ class TaskStore implements TaskLocalStore {
     if (isar == null) {
       return const Stream<void>.empty();
     }
-    return isar.taskDocs.where().watchLazy(fireImmediately: true);
+    try {
+      return isar.taskDocs.where().watchLazy(fireImmediately: true);
+    } on IsarError {
+      // App lifecycle can race with disposal/rebuild; avoid crashing UI.
+      return const Stream<void>.empty();
+    }
   }
 
   /// Opens Isar and subscribes to Firestore immediately (no wait for first snapshot).
   Future<void> init() async {
     _isar = await _ensureIsarOpen();
+    await _drainPendingOps();
 
     await _firebaseSub?.cancel();
     _firebaseSub = tasksRef
@@ -260,6 +275,8 @@ class TaskStore implements TaskLocalStore {
         }
       }
     });
+    await _applyPendingOpsToLocal();
+    await _drainPendingOps();
   }
 
   Future<void> _upsertFirestoreDoc(
@@ -279,6 +296,7 @@ class TaskStore implements TaskLocalStore {
   void dispose() {
     unawaited(_firebaseSub?.cancel());
     _firebaseSub = null;
+    _isar = null;
   }
 
   /// Add task: Isar first (temp id), then Firestore; then replace row with server id.
@@ -289,43 +307,23 @@ class TaskStore implements TaskLocalStore {
     }
 
     final createdAt = (taskData['createdAt'] as Timestamp?) ?? Timestamp.now();
-    final tempKey = 'temp_${DateTime.now().millisecondsSinceEpoch}';
-    final pendingDoc = _taskDocFromFirestore(tempKey, taskData)
+    final opId = '${DateTime.now().microsecondsSinceEpoch}_create';
+    final stableDocId = 'local_$opId';
+    final pendingDoc = _taskDocFromFirestore(stableDocId, taskData)
       ..createdAtMillis = createdAt.millisecondsSinceEpoch;
     final local = _localTaskFromDoc(pendingDoc);
 
     await isar.writeTxn(() async {
       await isar.taskDocs.put(_taskDocFromLocal(local));
     });
-
-    try {
-      final docRef = await tasksRef.add(taskData);
-      await isar.writeTxn(() async {
-        final tempRow =
-            await isar.taskDocs.filter().docKeyEqualTo(tempKey).findFirst();
-        if (tempRow != null) {
-          await isar.taskDocs.delete(tempRow.id);
-        }
-        final fromServer = _taskDocFromFirestore(docRef.id, taskData);
-        fromServer.createdAtMillis = createdAt.millisecondsSinceEpoch;
-        final existing =
-            await isar.taskDocs.filter().docKeyEqualTo(docRef.id).findFirst();
-        if (existing != null) {
-          fromServer.id = existing.id;
-        }
-        await isar.taskDocs.put(fromServer);
-      });
-      return docRef.id;
-    } catch (e) {
-      await isar.writeTxn(() async {
-        final tempRow =
-            await isar.taskDocs.filter().docKeyEqualTo(tempKey).findFirst();
-        if (tempRow != null) {
-          await isar.taskDocs.delete(tempRow.id);
-        }
-      });
-      rethrow;
-    }
+    await _enqueuePendingOpWithId(
+      opId,
+      type: 'create',
+      docId: stableDocId,
+      data: taskData,
+    );
+    unawaited(_sendCreateOp(opId, stableDocId, taskData));
+    return stableDocId;
   }
 
   List<LocalTask> getAllTasks() {
@@ -333,14 +331,18 @@ class TaskStore implements TaskLocalStore {
     if (isar == null) {
       return const [];
     }
-    final docs = isar.taskDocs.where().findAllSync();
-    final tasks = docs.map(_localTaskFromDoc).toList();
-    tasks.sort((a, b) {
-      final aMs = a.createdAtMillis ?? 0;
-      final bMs = b.createdAtMillis ?? 0;
-      return bMs.compareTo(aMs);
-    });
-    return tasks;
+    try {
+      final docs = isar.taskDocs.where().findAllSync();
+      final tasks = docs.map(_localTaskFromDoc).toList();
+      tasks.sort((a, b) {
+        final aMs = a.createdAtMillis ?? 0;
+        final bMs = b.createdAtMillis ?? 0;
+        return bMs.compareTo(aMs);
+      });
+      return tasks;
+    } on IsarError {
+      return const [];
+    }
   }
 
   String getTaskId(LocalTask task) {
@@ -350,8 +352,12 @@ class TaskStore implements TaskLocalStore {
   LocalTask? getTask(String id) {
     final isar = _isar;
     if (isar == null) return null;
-    final row = isar.taskDocs.filter().docKeyEqualTo(id).findFirstSync();
-    return row == null ? null : _localTaskFromDoc(row);
+    try {
+      final row = isar.taskDocs.filter().docKeyEqualTo(id).findFirstSync();
+      return row == null ? null : _localTaskFromDoc(row);
+    } on IsarError {
+      return null;
+    }
   }
 
   Future<void> updateTask(
@@ -375,22 +381,12 @@ class TaskStore implements TaskLocalStore {
     });
 
     final firestoreId = task.firestoreId ?? id;
-    if (firestoreId.startsWith('temp_')) {
-      return;
-    }
-    unawaited(
-      tasksRef
-          .doc(firestoreId)
-          .update(flattenFirestoreUpdateData(updateData))
-          .catchError((Object e, StackTrace st) {
-        log(
-          'Firestore update failed for $firestoreId',
-          error: e,
-          stackTrace: st,
-          name: 'TaskStore',
-        );
-      }),
+    final opId = await _enqueuePendingOp(
+      type: 'update',
+      docId: firestoreId,
+      data: updateData,
     );
+    unawaited(_sendUpdateOp(opId, firestoreId, updateData));
   }
 
   Future<void> deleteTask(String id) async {
@@ -408,11 +404,210 @@ class TaskStore implements TaskLocalStore {
     });
 
     if (serverDocId == null) {
+      await _removeOpsForDocId(id);
       return;
     }
+    final opId = await _enqueuePendingOp(
+      type: 'delete',
+      docId: serverDocId,
+      data: const <String, dynamic>{},
+    );
+    unawaited(_sendDeleteOp(opId, serverDocId));
+  }
+
+  Future<File> _pendingOpsFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/task_pending_ops_$userId.json');
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPendingOps() async {
     try {
-      await tasksRef.doc(serverDocId).delete();
+      final f = await _pendingOpsFile();
+      if (!await f.exists()) return <Map<String, dynamic>>[];
+      final text = await f.readAsString();
+      if (text.trim().isEmpty) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(text);
+      if (decoded is! List) return <Map<String, dynamic>>[];
+      return decoded
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _savePendingOps(List<Map<String, dynamic>> ops) async {
+    try {
+      final f = await _pendingOpsFile();
+      await f.writeAsString(jsonEncode(ops));
     } catch (_) {}
+  }
+
+  Future<String> _enqueuePendingOp({
+    required String type,
+    required String docId,
+    required Map<String, dynamic> data,
+  }) async {
+    final opId = '${DateTime.now().microsecondsSinceEpoch}_$type';
+    await _enqueuePendingOpWithId(
+      opId,
+      type: type,
+      docId: docId,
+      data: data,
+    );
+    return opId;
+  }
+
+  Future<void> _enqueuePendingOpWithId(
+    String opId, {
+    required String type,
+    required String docId,
+    required Map<String, dynamic> data,
+  }) async {
+    final ops = await _loadPendingOps();
+    ops.add(<String, dynamic>{
+      'opId': opId,
+      'type': type,
+      'docId': docId,
+      'data': data,
+      'createdAtMs': DateTime.now().millisecondsSinceEpoch,
+    });
+    await _savePendingOps(ops);
+  }
+
+  Future<void> _removePendingOp(String opId) async {
+    final ops = await _loadPendingOps();
+    ops.removeWhere((op) => (op['opId'] as String?) == opId);
+    await _savePendingOps(ops);
+  }
+
+  Future<void> _removeOpsForDocId(String docId) async {
+    final ops = await _loadPendingOps();
+    ops.removeWhere((op) => (op['docId'] as String?) == docId);
+    await _savePendingOps(ops);
+  }
+
+  Future<void> _sendCreateOp(
+    String opId,
+    String localDocId,
+    Map<String, dynamic> taskData,
+  ) async {
+    final isar = _isar;
+    if (isar == null) return;
+    if (opId.isNotEmpty && !_inFlightOpIds.add(opId)) return;
+    try {
+      final docRef = tasksRef.doc(localDocId);
+      await docRef.set(taskData, SetOptions(merge: true));
+      await _removePendingOp(opId);
+    } catch (_) {
+    } finally {
+      if (opId.isNotEmpty) _inFlightOpIds.remove(opId);
+    }
+  }
+
+  Future<void> _sendUpdateOp(
+    String opId,
+    String docId,
+    Map<String, dynamic> updateData,
+  ) async {
+    if (docId.startsWith('temp_')) return;
+    if (opId.isNotEmpty && !_inFlightOpIds.add(opId)) return;
+    try {
+      await tasksRef.doc(docId).update(flattenFirestoreUpdateData(updateData));
+      await _removePendingOp(opId);
+    } catch (e, st) {
+      log(
+        'Firestore update failed for $docId',
+        error: e,
+        stackTrace: st,
+        name: 'TaskStore',
+      );
+    } finally {
+      if (opId.isNotEmpty) _inFlightOpIds.remove(opId);
+    }
+  }
+
+  Future<void> _sendDeleteOp(String opId, String docId) async {
+    if (docId.startsWith('temp_')) {
+      await _removePendingOp(opId);
+      return;
+    }
+    if (opId.isNotEmpty && !_inFlightOpIds.add(opId)) return;
+    try {
+      await tasksRef.doc(docId).delete();
+      await _removePendingOp(opId);
+    } catch (_) {
+    } finally {
+      if (opId.isNotEmpty) _inFlightOpIds.remove(opId);
+    }
+  }
+
+  Future<void> _drainPendingOps() async {
+    if (_drainingPendingOps) return;
+    _drainingPendingOps = true;
+    try {
+      final ops = await _loadPendingOps()
+        ..sort(
+          (a, b) => ((a['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+            (b['createdAtMs'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      for (final op in ops) {
+        final opId = (op['opId'] as String?) ?? '';
+        final type = (op['type'] as String?) ?? '';
+        final docId = (op['docId'] as String?) ?? '';
+        final data = op['data'] is Map
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if (type == 'create') {
+          await _sendCreateOp(opId, docId, data);
+        } else if (type == 'update') {
+          await _sendUpdateOp(opId, docId, data);
+        } else if (type == 'delete') {
+          await _sendDeleteOp(opId, docId);
+        }
+      }
+    } finally {
+      _drainingPendingOps = false;
+    }
+  }
+
+  Future<void> _applyPendingOpsToLocal() async {
+    final isar = _isar;
+    if (isar == null) return;
+    final ops = await _loadPendingOps()
+      ..sort(
+        (a, b) => ((a['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+          (b['createdAtMs'] as num?)?.toInt() ?? 0,
+        ),
+      );
+    await isar.writeTxn(() async {
+      for (final op in ops) {
+        final type = (op['type'] as String?) ?? '';
+        final docId = (op['docId'] as String?) ?? '';
+        final data = op['data'] is Map
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if (type == 'create') {
+          await _upsertFirestoreDoc(isar, docId, data);
+        } else if (type == 'update') {
+          final row = await isar.taskDocs.filter().docKeyEqualTo(docId).findFirst();
+          if (row == null) continue;
+          final task = _localTaskFromDoc(row);
+          _applyUpdateToTask(task, data);
+          final updated = _taskDocFromLocal(task)
+            ..id = row.id
+            ..docKey = row.docKey;
+          await isar.taskDocs.put(updated);
+        } else if (type == 'delete') {
+          final row = await isar.taskDocs.filter().docKeyEqualTo(docId).findFirst();
+          if (row != null) {
+            await isar.taskDocs.delete(row.id);
+          }
+        }
+      }
+    });
   }
 
   void _applyUpdateToTask(LocalTask task, Map<String, dynamic> updateData) {

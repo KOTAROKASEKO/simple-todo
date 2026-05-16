@@ -2,9 +2,9 @@
 const String kJournalAiDefaultCharacterId = 'default';
 
 const Map<String, int> kJournalAiCharacterUnlockCosts = {
-  'gyaru': 20,
+  'gyaru': 10,
   'kopitiam_uncle': 10,
-  'chinese_auntie': 15,
+  'chinese_auntie': 10,
 };
 
 const Set<String> kJournalAiAllCharacterIds = {

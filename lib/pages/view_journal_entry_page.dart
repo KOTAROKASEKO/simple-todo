@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:video_player/video_player.dart';
 import 'package:simpletodo/journal_image_cache.dart';
 import 'package:simpletodo/widgets/journal_ai_character_avatar.dart';
 import 'package:simpletodo/widgets/liquid_glass_app_bar.dart';
@@ -27,6 +29,17 @@ class ViewJournalEntryPage extends StatelessWidget {
   /// List of image file paths (or download URLs in the future). Backward compat: can be null/empty.
   final List<String>? imagePaths;
   final Map<String, dynamic>? initialAiReflection;
+
+  bool _isVideoPath(String pathOrUrl) {
+    final uri = Uri.tryParse(pathOrUrl);
+    final path = (uri?.path ?? pathOrUrl).toLowerCase();
+    return path.endsWith('.mp4') ||
+        path.endsWith('.mov') ||
+        path.endsWith('.m4v') ||
+        path.endsWith('.webm') ||
+        path.endsWith('.avi') ||
+        path.endsWith('.mkv');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,16 +75,24 @@ class ViewJournalEntryPage extends StatelessWidget {
       }
     }
 
-    Future<void> openImageFullScreen(String pathOrUrl) async {
+    Future<void> openMediaFullScreen(String pathOrUrl) async {
+      final isVideo = _isVideoPath(pathOrUrl);
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => _JournalImageFullScreenPage(pathOrUrl: pathOrUrl),
+          builder: (_) => isVideo
+              ? _JournalVideoFullScreenPage(pathOrUrl: pathOrUrl)
+              : _JournalImageFullScreenPage(pathOrUrl: pathOrUrl),
         ),
       );
     }
 
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final linkColor = isDark ? const Color(0xFF93C5FD) : Colors.blue.shade700;
+
     final appBar = AppBar(
       flexibleSpace: const LiquidGlassAppBarBackground(),
+      foregroundColor: scheme.onSurface,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
@@ -80,12 +101,12 @@ class ViewJournalEntryPage extends StatelessWidget {
       title: Text(
         dateLabel,
         style: TextStyle(
-          color: Colors.grey.shade800,
+          color: scheme.onSurface,
           fontWeight: FontWeight.w600,
           fontSize: 18,
         ),
       ),
-      iconTheme: IconThemeData(color: Colors.grey.shade700),
+      iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
       actions: [
         IconButton(
           tooltip: 'Delete entry',
@@ -125,7 +146,7 @@ class ViewJournalEntryPage extends StatelessWidget {
               );
             }
           },
-          icon: const Icon(Icons.delete_outline),
+          icon: Icon(Icons.delete_outline, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(width: 8),
       ],
@@ -133,7 +154,7 @@ class ViewJournalEntryPage extends StatelessWidget {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: appBar,
       body: Padding(
         padding: EdgeInsets.only(
@@ -150,16 +171,18 @@ class ViewJournalEntryPage extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FC),
+                    color: scheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFF8F9FC)),
+                    border: Border.all(
+                      color: scheme.outline.withValues(alpha: 0.45),
+                    ),
                   ),
                   child: SelectableText(
                     content.isEmpty ? 'No content' : content,
                     style: TextStyle(
                       fontSize: 16,
                       height: 1.55,
-                      color: Colors.grey.shade800,
+                      color: scheme.onSurface,
                     ),
                   ),
                 ),
@@ -180,16 +203,23 @@ class ViewJournalEntryPage extends StatelessWidget {
                       final pathOrUrl = paths[index];
                       final mq = MediaQuery.of(context);
                       final tileLogicalW =
-                          (mq.size.width - 40 - 10) / 2; // page padding + grid gap
+                          (mq.size.width - 40 - 10) /
+                          2; // page padding + grid gap
                       // Only pass cache width (not height): both dimensions use
                       // ResizeImagePolicy.exact and distort the decoded bitmap.
                       final memW = (tileLogicalW * mq.devicePixelRatio)
                           .round()
                           .clamp(120, 900);
+                      if (_isVideoPath(pathOrUrl)) {
+                        return _JournalVideoThumbnail(
+                          pathOrUrl: pathOrUrl,
+                          onTap: () => openMediaFullScreen(pathOrUrl),
+                        );
+                      }
                       return _JournalPhotoThumbnail(
                         pathOrUrl: pathOrUrl,
                         memCacheWidth: memW,
-                        onTap: () => openImageFullScreen(pathOrUrl),
+                        onTap: () => openMediaFullScreen(pathOrUrl),
                       );
                     },
                   ),
@@ -200,12 +230,14 @@ class ViewJournalEntryPage extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.fromLTRB(14, 14, 16, 16),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: scheme.surface,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(color: scheme.outline),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
+                          color: Colors.black.withValues(
+                            alpha: isDark ? 0.35 : 0.04,
+                          ),
                           blurRadius: 12,
                           offset: const Offset(0, 2),
                         ),
@@ -217,7 +249,9 @@ class ViewJournalEntryPage extends StatelessWidget {
                         JournalAiCharacterAvatar(
                           characterId: aiCharacterId,
                           size: 44,
-                          iconColor: Colors.indigo.shade700,
+                          iconColor: isDark
+                              ? Colors.indigo.shade200
+                              : Colors.indigo.shade700,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -228,30 +262,30 @@ class ViewJournalEntryPage extends StatelessWidget {
                               p: TextStyle(
                                 fontSize: 16,
                                 height: 1.55,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               h1: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,
                                 height: 1.35,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               h2: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
                                 height: 1.4,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               h3: TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w600,
                                 height: 1.45,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               listBullet: TextStyle(
                                 fontSize: 16,
                                 height: 1.55,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               listIndent: 24,
                               blockSpacing: 10,
@@ -259,18 +293,18 @@ class ViewJournalEntryPage extends StatelessWidget {
                                 fontSize: 14,
                                 height: 1.45,
                                 fontFamily: 'monospace',
-                                color: Colors.grey.shade800,
-                                backgroundColor: Colors.grey.shade100,
+                                color: scheme.onSurface,
+                                backgroundColor: scheme.surfaceContainerHigh,
                               ),
                               codeblockDecoration: BoxDecoration(
-                                color: Colors.grey.shade100,
+                                color: scheme.surfaceContainerHigh,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               codeblockPadding: const EdgeInsets.all(12),
                               blockquote: TextStyle(
                                 fontSize: 16,
                                 height: 1.55,
-                                color: Colors.grey.shade800,
+                                color: scheme.onSurfaceVariant,
                                 fontStyle: FontStyle.italic,
                               ),
                               blockquotePadding: const EdgeInsets.only(
@@ -279,22 +313,22 @@ class ViewJournalEntryPage extends StatelessWidget {
                               blockquoteDecoration: BoxDecoration(
                                 border: Border(
                                   left: BorderSide(
-                                    color: Colors.grey.shade400,
+                                    color: scheme.outline,
                                     width: 3,
                                   ),
                                 ),
                               ),
                               a: TextStyle(
-                                color: Colors.blue.shade700,
+                                color: linkColor,
                                 decoration: TextDecoration.underline,
                               ),
                               strong: TextStyle(
                                 fontWeight: FontWeight.w700,
-                                color: Colors.grey.shade900,
+                                color: scheme.onSurface,
                               ),
                               em: TextStyle(
                                 fontStyle: FontStyle.italic,
-                                color: Colors.grey.shade800,
+                                color: scheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -321,6 +355,7 @@ class _JournalPhotoThumbnail extends StatelessWidget {
   });
 
   final String pathOrUrl;
+
   /// Decode cap for network images; height omitted so decode keeps aspect ratio.
   final int memCacheWidth;
   final VoidCallback onTap;
@@ -338,14 +373,14 @@ class _JournalPhotoThumbnail extends StatelessWidget {
           height: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: Colors.grey.shade500,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ),
       ),
       errorWidget: (context, url, error) => Center(
         child: Icon(
           Icons.broken_image_outlined,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -358,7 +393,7 @@ class _JournalPhotoThumbnail extends StatelessWidget {
       errorBuilder: (context, error, _) => Center(
         child: Icon(
           Icons.broken_image_outlined,
-          color: Colors.grey.shade600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
@@ -373,10 +408,7 @@ class _JournalPhotoThumbnail extends StatelessWidget {
     }
     return ImageFiltered(
       imageFilter: ImageFilter.blur(sigmaX: _blurSigma, sigmaY: _blurSigma),
-      child: Transform.scale(
-        scale: 1.12,
-        child: core,
-      ),
+      child: Transform.scale(scale: 1.12, child: core),
     );
   }
 
@@ -390,14 +422,12 @@ class _JournalPhotoThumbnail extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
           child: ColoredBox(
-            color: Colors.grey.shade200,
+            color: Theme.of(context).colorScheme.surfaceContainerHigh,
             child: Stack(
               fit: StackFit.expand,
               children: [
                 _layer(BoxFit.cover, blurred: true),
-                Positioned.fill(
-                  child: _layer(BoxFit.contain, blurred: false),
-                ),
+                Positioned.fill(child: _layer(BoxFit.contain, blurred: false)),
               ],
             ),
           ),
@@ -489,6 +519,137 @@ class _JournalImageFullScreenPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _JournalVideoThumbnail extends StatelessWidget {
+  const _JournalVideoThumbnail({required this.pathOrUrl, required this.onTap});
+
+  final String pathOrUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: ColoredBox(
+            color: Colors.black87,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Center(
+                  child: Icon(
+                    Icons.videocam_rounded,
+                    color: Colors.white.withValues(alpha: 0.75),
+                    size: 28,
+                  ),
+                ),
+                const Center(
+                  child: Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.white,
+                    size: 46,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _JournalVideoFullScreenPage extends StatefulWidget {
+  const _JournalVideoFullScreenPage({required this.pathOrUrl});
+
+  final String pathOrUrl;
+
+  @override
+  State<_JournalVideoFullScreenPage> createState() =>
+      _JournalVideoFullScreenPageState();
+}
+
+class _JournalVideoFullScreenPageState
+    extends State<_JournalVideoFullScreenPage> {
+  VideoPlayerController? _controller;
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_initVideo());
+  }
+
+  Future<void> _initVideo() async {
+    final controller = journalImageIsNetworkUrl(widget.pathOrUrl)
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.pathOrUrl))
+        : VideoPlayerController.file(File(widget.pathOrUrl));
+    await controller.initialize();
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+    setState(() {
+      _controller = controller;
+      _ready = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_controller?.dispose());
+    _controller = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+      ),
+      body: Center(
+        child: !_ready || controller == null
+            ? const CircularProgressIndicator(color: Colors.white70)
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AspectRatio(
+                    aspectRatio: controller.value.aspectRatio == 0
+                        ? 16 / 9
+                        : controller.value.aspectRatio,
+                    child: VideoPlayer(controller),
+                  ),
+                  const SizedBox(height: 16),
+                  IconButton.filled(
+                    onPressed: () {
+                      setState(() {
+                        if (controller.value.isPlaying) {
+                          controller.pause();
+                        } else {
+                          controller.play();
+                        }
+                      });
+                    },
+                    icon: Icon(
+                      controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

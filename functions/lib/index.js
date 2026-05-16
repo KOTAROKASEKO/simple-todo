@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.analyzeMistakes = exports.sendTestJournalDailyReminder = exports.sendTestDailyCheckNotification = exports.deliverRandomJournalAiFeedback = exports.onJournalEntryCreatedQueueAi = exports.sendJournalDailyReminders = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
+exports.analyzeMistakes = exports.sendTestJournalDailyReminder = exports.sendTestDailyCheckNotification = exports.searchPublicRecipes = exports.onUserRecipeWrittenSyncPublicRecipes = exports.deliverRandomJournalAiFeedback = exports.onJournalEntryAiRequestedQueueAi = exports.onJournalEntryCreatedQueueAi = exports.sendJournalDailyReminders = exports.sendDailyCheckReminders = exports.sendDueTaskReminders = void 0;
 const admin = __importStar(require("firebase-admin"));
 const https_1 = require("firebase-functions/v2/https");
 const vertexai_1 = require("@google-cloud/vertexai");
@@ -44,7 +44,11 @@ const journal_daily_reminder_1 = require("./journal_daily_reminder");
 Object.defineProperty(exports, "sendJournalDailyReminders", { enumerable: true, get: function () { return journal_daily_reminder_1.sendJournalDailyReminders; } });
 const journal_ai_surprise_1 = require("./journal_ai_surprise");
 Object.defineProperty(exports, "onJournalEntryCreatedQueueAi", { enumerable: true, get: function () { return journal_ai_surprise_1.onJournalEntryCreatedQueueAi; } });
+Object.defineProperty(exports, "onJournalEntryAiRequestedQueueAi", { enumerable: true, get: function () { return journal_ai_surprise_1.onJournalEntryAiRequestedQueueAi; } });
 Object.defineProperty(exports, "deliverRandomJournalAiFeedback", { enumerable: true, get: function () { return journal_ai_surprise_1.deliverRandomJournalAiFeedback; } });
+const public_recipes_algolia_1 = require("./public_recipes_algolia");
+Object.defineProperty(exports, "onUserRecipeWrittenSyncPublicRecipes", { enumerable: true, get: function () { return public_recipes_algolia_1.onUserRecipeWrittenSyncPublicRecipes; } });
+Object.defineProperty(exports, "searchPublicRecipes", { enumerable: true, get: function () { return public_recipes_algolia_1.searchPublicRecipes; } });
 admin.initializeApp();
 /** Sends one test "Check your tasks" FCM to the current user (for debugging). */
 exports.sendTestDailyCheckNotification = (0, https_1.onCall)({ region: "us-central1" }, async (request) => {

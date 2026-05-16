@@ -1,5 +1,4 @@
-import 'package:isar/isar.dart';
-
+import 'package:isar_community/isar.dart';
 part 'task_doc.g.dart';
 
 @collection

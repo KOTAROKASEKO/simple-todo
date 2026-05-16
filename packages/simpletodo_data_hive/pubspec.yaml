@@ -1,0 +1,18 @@
+name: simpletodo_data_hive
+description: Hive-backed local task/journal data layer.
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cloud_firestore: ^5.6.7
+  hive: ^2.2.3
+  simpletodo_data_core:
+    path: ../simpletodo_data_core
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

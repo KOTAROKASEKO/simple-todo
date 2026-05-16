@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'isar/app_isar.dart';
-import 'models/local_task.dart';
-import 'task_local_store.dart';
+import 'package:simpletodo_data_core/simpletodo_data_core.dart' show TaskLocalStore, LocalTask;
 
 /// Clears shared app Isar (tasks + journals) on sign-out — no-op on web.
 Future<void> clearTaskIsarOnLogout() => clearAppIsarOnLogout();

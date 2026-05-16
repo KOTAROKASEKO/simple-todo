@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.crossplatformtodo"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -41,6 +41,22 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    flavorDimensions += "localdb"
+    productFlavors {
+        create("isar") {
+            dimension = "localdb"
+            resValue("string", "app_name", "SimpleTodo Isar")
+        }
+        create("hive") {
+            dimension = "localdb"
+            resValue("string", "app_name", "SimpleTodo Hive")
+        }
+        create("objectBox") {
+            dimension = "localdb"
+            resValue("string", "app_name", "SimpleTodo ObjectBox")
+        }
     }
 
     signingConfigs {

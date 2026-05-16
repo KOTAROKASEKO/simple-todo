@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deliverRandomJournalAiFeedback = exports.onJournalEntryCreatedQueueAi = void 0;
+exports.deliverRandomJournalAiFeedback = exports.onJournalEntryAiRequestedQueueAi = exports.onJournalEntryCreatedQueueAi = void 0;
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions/v1"));
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -41,65 +41,78 @@ const firebase_functions_1 = require("firebase-functions");
 const journal_character_voice_1 = require("./journal_character_voice");
 const journal_reflection_ai_1 = require("./journal_reflection_ai");
 /**
- * Journal “surprise” AI comments — product rules:
- *
- * 1. **Often no comment** — On each new journal post (when the user allows AI), we roll
- *    once. Most posts are never queued, so there is no AI comment for that entry.
- * 2. **When chosen** — We queue the entry; the comment is generated and delivered only
- *    after **exactly one** of **30, 60, or 120 minutes** from post time (picked at
- *    random). The scheduler may add up to ~10 minutes slack before the job runs.
+ * Journal AI replies are opt-in per entry from app long-press actions.
+ * Delivery timing is chosen server-side so the notification feels like a surprise.
  */
 /** Server-only queue for “surprise” journal AI feedback (unpredictable timing). */
 const PENDING_COLLECTION = "journal_ai_pending";
 const MAX_RECENT_HISTORY_ITEMS = 3;
-/** Chance (0–1) this post gets any AI comment at all; rest get none. */
-const JOURNAL_AI_PICKUP_PROBABILITY = 0.5;
-/** If picked, delay from post time until we generate & deliver (one of these, uniform). */
-const DELAY_MS_CHOICES = [
+/** Millisecond delays (server-picked) so users never see a fixed “in X minutes” promise. */
+const SURPRISE_DELAY_MS_CHOICES = [
+    22 * 60 * 1000,
     30 * 60 * 1000,
+    38 * 60 * 1000,
+    45 * 60 * 1000,
+    55 * 60 * 1000,
     60 * 60 * 1000,
-    2 * 60 * 60 * 1000,
+    72 * 60 * 1000,
+    85 * 60 * 1000,
+    95 * 60 * 1000,
+    105 * 60 * 1000,
+    120 * 60 * 1000,
 ];
+function pickRandomSurpriseDelayMs() {
+    const i = Math.floor(Math.random() * SURPRISE_DELAY_MS_CHOICES.length);
+    return SURPRISE_DELAY_MS_CHOICES[i];
+}
 /**
- * On create: maybe queue for later AI; if queued, deliverAfter is post time + 30m|60m|120m.
- *
- * Uses Firestore v1 trigger (not Eventarc) to avoid first-time Eventarc Service Agent
- * permission errors on deploy.
+ * Legacy create trigger remains deployed but intentionally no-ops; AI requests are
+ * queued by the update trigger below. Uses Firestore v1 trigger (not Eventarc) to
+ * avoid first-time Eventarc Service Agent permission errors on deploy.
  */
 exports.onJournalEntryCreatedQueueAi = functions
     .region("us-central1")
     .runWith({ memory: "256MB" })
     .firestore.document("todo/{userId}/journal_entries/{entryId}")
-    .onCreate(async (snap, context) => {
+    .onCreate(async () => {
+    return;
+});
+/**
+ * On update: queue exactly one AI reply when user makes a new explicit request.
+ *
+ * A request is identified by `journalAiReplyRequestedAt` timestamp changing.
+ */
+exports.onJournalEntryAiRequestedQueueAi = functions
+    .region("us-central1")
+    .runWith({ memory: "256MB" })
+    .firestore.document("todo/{userId}/journal_entries/{entryId}")
+    .onUpdate(async (change, context) => {
+    const before = change.before.data() ?? {};
+    const after = change.after.data() ?? {};
     const userId = context.params.userId;
     const entryId = context.params.entryId;
-    const data = snap.data();
-    const content = (data?.content ?? "").toString().trim();
+    const requestedAtBefore = before.journalAiReplyRequestedAt;
+    const requestedAtAfter = after.journalAiReplyRequestedAt;
+    const requestChanged = requestedAtAfter != null &&
+        (requestedAtBefore == null ||
+            requestedAtBefore.toMillis?.() !== requestedAtAfter.toMillis?.());
+    if (!requestChanged) {
+        return;
+    }
+    const content = (after.content ?? "").toString().trim();
     if (!content) {
         return;
     }
-    const existing = data?.aiReflection;
-    if (existing != null && typeof existing === "object") {
-        return;
-    }
-    const aiRequested = data?.journalAiFeedbackRequested;
-    if (aiRequested === false) {
-        firebase_functions_1.logger.info("Journal AI skipped (user opted out)", { userId, entryId });
-        return;
-    }
-    if (Math.random() >= JOURNAL_AI_PICKUP_PROBABILITY) {
-        firebase_functions_1.logger.info("Journal AI: not picked this time (random)", { userId, entryId });
-        return;
-    }
-    const delayMs = DELAY_MS_CHOICES[Math.floor(Math.random() * DELAY_MS_CHOICES.length)];
+    const delayMs = pickRandomSurpriseDelayMs();
     const deliverAfter = admin.firestore.Timestamp.fromMillis(Date.now() + delayMs);
     await admin.firestore().collection(PENDING_COLLECTION).add({
         userId,
         entryId,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         deliverAfter,
+        requestedAt: requestedAtAfter,
     });
-    firebase_functions_1.logger.info("Journal AI queued", {
+    firebase_functions_1.logger.info("Journal AI queued from explicit request", {
         userId,
         entryId,
         delayMinutes: Math.round(delayMs / 60000),
@@ -107,7 +120,7 @@ exports.onJournalEntryCreatedQueueAi = functions
 });
 /**
  * Delivers at most one pending entry whose deliverAfter time has passed.
- * Runs often enough to hit ~30m / 1h / 2h windows without large drift.
+ * Runs every 10 minutes so surprise delays stay unpredictable but still timely.
  */
 exports.deliverRandomJournalAiFeedback = (0, scheduler_1.onSchedule)({
     schedule: "every 10 minutes",
@@ -187,10 +200,6 @@ exports.deliverRandomJournalAiFeedback = (0, scheduler_1.onSchedule)({
         return;
     }
     const j = journalSnap.data() ?? {};
-    if (j.aiReflection != null && typeof j.aiReflection === "object") {
-        await pick.ref.delete();
-        return;
-    }
     let content = (j.content ?? "").toString().trim();
     if (!content) {
         await pick.ref.delete();

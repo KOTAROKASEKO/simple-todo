@@ -1,14 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'isar/app_isar_io.dart';
 import 'isar/journal_doc.dart';
-import 'journal_local_store.dart';
-import 'models/local_journal_entry.dart';
+import 'package:simpletodo_data_core/simpletodo_data_core.dart' show JournalLocalStore, LocalJournalEntry;
 
 /// Clears shared app Isar (tasks + journals) on sign-out.
 Future<void> clearJournalIsarOnLogout() => clearAppIsarOnLogout();
@@ -147,6 +148,8 @@ class JournalStore implements JournalLocalStore {
 
   Isar? _isar;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firebaseSub;
+  bool _drainingPendingOps = false;
+  final Set<String> _inFlightOpIds = <String>{};
 
   Stream<void> get changes {
     final isar = _isar;
@@ -158,6 +161,7 @@ class JournalStore implements JournalLocalStore {
 
   Future<void> init() async {
     _isar = await _ensureJournalIsarOpen();
+    await _drainPendingOps();
 
     await _firebaseSub?.cancel();
     _firebaseSub = journalRef
@@ -204,6 +208,8 @@ class JournalStore implements JournalLocalStore {
         }
       }
     });
+    await _applyPendingOpsToLocal();
+    await _drainPendingOps();
   }
 
   Future<void> _upsertFirestoreDoc(
@@ -223,15 +229,20 @@ class JournalStore implements JournalLocalStore {
   void dispose() {
     unawaited(_firebaseSub?.cancel());
     _firebaseSub = null;
+    _isar = null;
   }
 
   List<LocalJournalEntry> getAllJournalEntries() {
     final isar = _isar;
     if (isar == null) return const [];
-    final docs = isar.journalDocs.where().findAllSync();
-    final list = docs.map(_localJournalFromDoc).toList();
-    list.sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
-    return list;
+    try {
+      final docs = isar.journalDocs.where().findAllSync();
+      final list = docs.map(_localJournalFromDoc).toList();
+      list.sort((a, b) => b.sortOrder.compareTo(a.sortOrder));
+      return list;
+    } on IsarError {
+      return const [];
+    }
   }
 
   /// Call after a successful Firestore [DocumentReference.set] so the list updates immediately.
@@ -299,11 +310,12 @@ class JournalStore implements JournalLocalStore {
       await isar.journalDocs.put(row);
     });
 
-    unawaited(
-      journalRef.doc(id).update(updateData).catchError((Object e, StackTrace st) {
-        debugPrint('JournalStore Firestore update failed for $id: $e');
-      }),
+    final opId = await _enqueuePendingOp(
+      type: 'update',
+      docId: id,
+      data: updateData,
     );
+    unawaited(_sendUpdateOp(opId, id, updateData));
   }
 
   Future<void> deleteJournal(String id) async {
@@ -317,11 +329,168 @@ class JournalStore implements JournalLocalStore {
         await isar.journalDocs.delete(row.id);
       }
     });
-
-    unawaited(
-      journalRef.doc(id).delete().catchError((Object e, StackTrace st) {
-        debugPrint('JournalStore Firestore delete failed for $id: $e');
-      }),
+    final opId = await _enqueuePendingOp(
+      type: 'delete',
+      docId: id,
+      data: const <String, dynamic>{},
     );
+    unawaited(_sendDeleteOp(opId, id));
+  }
+
+  Future<File> _pendingOpsFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final safePathKey = journalRef.path.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+    return File('${dir.path}/journal_pending_ops_$safePathKey.json');
+  }
+
+  Future<List<Map<String, dynamic>>> _loadPendingOps() async {
+    try {
+      final f = await _pendingOpsFile();
+      if (!await f.exists()) return <Map<String, dynamic>>[];
+      final text = await f.readAsString();
+      if (text.trim().isEmpty) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(text);
+      if (decoded is! List) return <Map<String, dynamic>>[];
+      return decoded
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _savePendingOps(List<Map<String, dynamic>> ops) async {
+    try {
+      final f = await _pendingOpsFile();
+      await f.writeAsString(jsonEncode(ops));
+    } catch (_) {}
+  }
+
+  Future<String> _enqueuePendingOp({
+    required String type,
+    required String docId,
+    required Map<String, dynamic> data,
+  }) async {
+    final opId = '${DateTime.now().microsecondsSinceEpoch}_$type';
+    final ops = await _loadPendingOps();
+    ops.add(<String, dynamic>{
+      'opId': opId,
+      'type': type,
+      'docId': docId,
+      'data': data,
+      'createdAtMs': DateTime.now().millisecondsSinceEpoch,
+    });
+    await _savePendingOps(ops);
+    return opId;
+  }
+
+  Future<void> _removePendingOp(String opId) async {
+    final ops = await _loadPendingOps();
+    ops.removeWhere((op) => (op['opId'] as String?) == opId);
+    await _savePendingOps(ops);
+  }
+
+  Future<void> _sendUpdateOp(
+    String opId,
+    String docId,
+    Map<String, dynamic> updateData,
+  ) async {
+    if (opId.isNotEmpty && !_inFlightOpIds.add(opId)) return;
+    try {
+      await journalRef.doc(docId).update(updateData);
+      await _removePendingOp(opId);
+    } catch (e) {
+      debugPrint('JournalStore Firestore update failed for $docId: $e');
+    } finally {
+      if (opId.isNotEmpty) _inFlightOpIds.remove(opId);
+    }
+  }
+
+  Future<void> _sendDeleteOp(String opId, String docId) async {
+    if (opId.isNotEmpty && !_inFlightOpIds.add(opId)) return;
+    try {
+      await journalRef.doc(docId).delete();
+      await _removePendingOp(opId);
+    } catch (e) {
+      debugPrint('JournalStore Firestore delete failed for $docId: $e');
+    } finally {
+      if (opId.isNotEmpty) _inFlightOpIds.remove(opId);
+    }
+  }
+
+  Future<void> _drainPendingOps() async {
+    if (_drainingPendingOps) return;
+    _drainingPendingOps = true;
+    try {
+      final ops = await _loadPendingOps()
+        ..sort(
+          (a, b) => ((a['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+            (b['createdAtMs'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      for (final op in ops) {
+        final opId = (op['opId'] as String?) ?? '';
+        final type = (op['type'] as String?) ?? '';
+        final docId = (op['docId'] as String?) ?? '';
+        final data = op['data'] is Map
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if (type == 'update') {
+          await _sendUpdateOp(opId, docId, data);
+        } else if (type == 'delete') {
+          await _sendDeleteOp(opId, docId);
+        }
+      }
+    } finally {
+      _drainingPendingOps = false;
+    }
+  }
+
+  Future<void> _applyPendingOpsToLocal() async {
+    final isar = _isar;
+    if (isar == null) return;
+    final ops = await _loadPendingOps()
+      ..sort(
+        (a, b) => ((a['createdAtMs'] as num?)?.toInt() ?? 0).compareTo(
+          (b['createdAtMs'] as num?)?.toInt() ?? 0,
+        ),
+      );
+    await isar.writeTxn(() async {
+      for (final op in ops) {
+        final type = (op['type'] as String?) ?? '';
+        final docId = (op['docId'] as String?) ?? '';
+        final data = op['data'] is Map
+            ? Map<String, dynamic>.from(op['data'] as Map)
+            : <String, dynamic>{};
+        if (type == 'update') {
+          final row = await isar.journalDocs.filter().docKeyEqualTo(docId).findFirst();
+          if (row == null) continue;
+          if (data.containsKey('order')) {
+            final v = data['order'];
+            if (v is num) row.sortOrder = v.toDouble();
+          }
+          if (data.containsKey('category')) {
+            final c = (data['category'] as String?) ?? 'diary';
+            row.category = c.toLowerCase();
+          }
+          if (data.containsKey('aiReflection')) {
+            final raw = data['aiReflection'];
+            if (raw is Map) {
+              final safe = _aiReflectionMapForJson(
+                Map<String, dynamic>.from(raw.map((k, v) => MapEntry(k.toString(), v))),
+              );
+              row.aiReflectionJson = safe.isEmpty ? null : jsonEncode(safe);
+            }
+          }
+          await isar.journalDocs.put(row);
+        } else if (type == 'delete') {
+          final row = await isar.journalDocs.filter().docKeyEqualTo(docId).findFirst();
+          if (row != null) {
+            await isar.journalDocs.delete(row.id);
+          }
+        }
+      }
+    });
   }
 }

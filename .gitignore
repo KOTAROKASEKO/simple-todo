@@ -52,3 +52,5 @@ app.*.map.json
 # Secrets (never commit)
 private_key.json
 **/private_key.json
+service-account.json
+**/service-account.json

@@ -1,0 +1,27 @@
+name: simpletodo_data_objectbox
+description: ObjectBox-backed local task/journal data layer.
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cloud_firestore: ^5.6.7
+  objectbox: ^4.0.0
+  objectbox_flutter_libs: ^4.0.0
+  path: ^1.9.0
+  path_provider: ^2.1.0
+  simpletodo_data_core:
+    path: ../simpletodo_data_core
+
+dev_dependencies:
+  build_runner: ^2.4.0
+  objectbox_generator: ^4.3.1
+  flutter_lints: ^6.0.0
+
+# source_gen 3.1.0 (pulled by older resolver) is incompatible with analyzer 8.4+.
+dependency_overrides:
+  source_gen: ^4.0.0

@@ -2,9 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:simpletodo/google_sign_in_bridge_stub.dart'
-    if (dart.library.html) 'package:simpletodo/google_sign_in_bridge_web.dart'
-    if (dart.library.js_interop) 'package:simpletodo/google_sign_in_bridge_web.dart';
 import 'package:simpletodo/services/google_sign_in_firebase.dart';
 
 /// Email + password sign-in / register (used in onboarding and standalone login).
@@ -100,6 +97,27 @@ class _EmailPasswordAuthCardState extends State<EmailPasswordAuthCard> {
     }
   }
 
+  Future<void> _signInWithGoogleWeb() async {
+    setState(() {
+      _googleLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final provider = GoogleAuthProvider();
+      await FirebaseAuth.instance.signInWithPopup(provider);
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = e.message ?? 'Google sign-in failed.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _errorMessage = '$e');
+      }
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -172,26 +190,16 @@ class _EmailPasswordAuthCardState extends State<EmailPasswordAuthCard> {
           ),
           const SizedBox(height: 16),
           if (kIsWeb)
-            buildGoogleSignInWebAuthButton(
-              onFirebaseSignInStarted: () {
-                if (mounted) {
-                  setState(() {
-                    _googleLoading = true;
-                    _errorMessage = null;
-                  });
-                }
-              },
-              onFirebaseSignInFinished: () {
-                if (mounted) setState(() => _googleLoading = false);
-              },
-              onFirebaseSignInFailed: (message) {
-                if (mounted) {
-                  setState(() {
-                    _googleLoading = false;
-                    _errorMessage = message;
-                  });
-                }
-              },
+            OutlinedButton.icon(
+              onPressed: _googleLoading || _isLoading ? null : _signInWithGoogleWeb,
+              icon: _googleLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.account_circle_outlined),
+              label: const Text('Continue with Google'),
             )
           else if (GoogleSignIn.instance.supportsAuthenticate())
             OutlinedButton.icon(

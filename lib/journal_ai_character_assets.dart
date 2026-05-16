@@ -18,6 +18,7 @@ const Map<String, IconData> kJournalAiCharacterIcons = {
 
 /// Bundled avatar images under [assets/images/].
 const Map<String, String> kJournalAiCharacterImageAssets = {
+  'default': 'assets/images/robotchan.png',
   'gyaru': 'assets/images/gyaru.png',
   'kopitiam_uncle': 'assets/images/ojisan.png',
   'chinese_auntie': 'assets/images/obachan.png',

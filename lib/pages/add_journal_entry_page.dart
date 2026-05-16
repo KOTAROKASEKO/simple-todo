@@ -3,17 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
-import 'package:simpletodo/journal_ai_character_assets.dart';
 import 'package:simpletodo/journal_image_cache.dart';
-import 'package:simpletodo/journal_ai_unlock.dart';
-import 'package:simpletodo/services/journal_character_unlock.dart';
-import 'package:simpletodo_data/simpletodo_data.dart';
-import 'package:simpletodo/widgets/journal_ai_character_avatar.dart';
+import 'package:simpletodo_data_core/simpletodo_data_core.dart';
 import 'package:simpletodo/widgets/liquid_glass_app_bar.dart';
 
 /// Full-screen journal entry page with a single text field that expands
@@ -26,104 +21,24 @@ class AddJournalEntryPage extends StatefulWidget {
   });
 
   final CollectionReference<Map<String, dynamic>> journalRef;
-  /// When set (mobile), the new doc is mirrored into Isar immediately.
-  final JournalStore? journalStore;
+
+  /// When set (mobile local store mode), mirrors remote create immediately.
+  final JournalLocalStore? journalStore;
 
   @override
   State<AddJournalEntryPage> createState() => _AddJournalEntryPageState();
 }
 
-
-const List<String> _kJournalCategories = ['diary', 'work', 'life'];
-
-String _categoryLabel(String value) {
-  switch (value) {
-    case 'diary':
-      return 'Diary';
-    case 'work':
-      return 'Work';
-    case 'life':
-      return 'Life';
-    default:
-      return value;
-  }
-}
-
 class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
-  static const String _prefJournalAiFeedback = 'journal_ai_feedback_enabled';
-  static const String _kNoShareId = '__no_share__';
-  static const Map<String, String> _kCharacterLabels = {
-    'default': 'Default assistant',
-    'gyaru': '美咲 · gyaru AI',
-    'kopitiam_uncle': 'Wong · kopitiam uncle AI',
-    'chinese_auntie': 'Yin · auntie AI',
-  };
-  static const Map<String, String> _kCharacterDescriptions = {
-    'default':
-        'Hi everyone. I usually respond like a warm, thoughtful therapist-style companion.',
-    'gyaru':
-        "I'm super positive! You can totally talk to me about anything - even wild stories, no judgment, haha!",
-    'kopitiam_uncle':
-        'Wah... everyone is working so hard, good job ah. Let\'s take it one practical step at a time.',
-    'chinese_auntie':
-        'Hey you! Bring me your journal - auntie is here to push you forward with love and energy!',
-  };
+  static const String _kDefaultJournalCategory = 'diary';
 
   final TextEditingController _contentController = TextEditingController();
   bool _isSaving = false;
   final List<_JournalDraftImage> _images = [];
   final ImagePicker _picker = ImagePicker();
   String? _draftEntryId;
-  /// Persisted default for category sheet: whether surprise AI feedback is requested.
-  bool _journalAiFeedbackEnabled = true;
-  String _journalAiCharacter = 'default';
-  /// Same as Firestore `journalDailyReminderGreetingName` (呼び名・通知用).
-  String _journalGreetingName = '';
-  static const int _kJournalGreetingMaxChars = 40;
-  List<String> _unlockedJournalIds = [kJournalAiDefaultCharacterId];
 
   bool get _hasUnsavedText => _contentController.text.trim().isNotEmpty;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadJournalAiSettings();
-  }
-
-  Future<void> _loadJournalAiSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final user = FirebaseAuth.instance.currentUser;
-    String character = 'default';
-    if (user != null) {
-      try {
-        final userSnap = await FirebaseFirestore.instance
-            .collection('todo')
-            .doc(user.uid)
-            .get();
-        final uData = userSnap.data() ?? <String, dynamic>{};
-        if (mounted) {
-          _unlockedJournalIds =
-              parseUnlockedJournalCharacters(uData['unlockedJournalAiCharacters']);
-        }
-        final raw = uData['journalAiCharacter'];
-        if (raw is String && _kCharacterLabels.containsKey(raw)) {
-          character = raw;
-        }
-        if (!isJournalCharacterUnlockedForList(character, _unlockedJournalIds)) {
-          character = kJournalAiDefaultCharacterId;
-        }
-        final greet = userSnap.data()?['journalDailyReminderGreetingName'];
-        if (greet is String && mounted) {
-          _journalGreetingName = greet;
-        }
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    setState(() {
-      _journalAiFeedbackEnabled = prefs.getBool(_prefJournalAiFeedback) ?? true;
-      _journalAiCharacter = character;
-    });
-  }
 
   @override
   void dispose() {
@@ -139,6 +54,16 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     return allowed.contains(ext) ? ext : 'jpg';
   }
 
+  bool _isVideoPath(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.avi') ||
+        lower.endsWith('.mkv');
+  }
+
   String? _contentTypeForExtension(String ext) {
     switch (ext) {
       case 'jpg':
@@ -152,6 +77,18 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
         return 'image/webp';
       case 'heic':
         return 'image/heic';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'm4v':
+        return 'video/x-m4v';
+      case 'webm':
+        return 'video/webm';
+      case 'avi':
+        return 'video/x-msvideo';
+      case 'mkv':
+        return 'video/x-matroska';
       default:
         return 'image/jpeg';
     }
@@ -181,7 +118,7 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     return ref.getDownloadURL();
   }
 
-  Future<void> _saveWithCategory(String category) async {
+  Future<void> _saveJournalEntry() async {
     final content = _contentController.text.trim();
     assert(content.isNotEmpty);
     final user = FirebaseAuth.instance.currentUser;
@@ -197,44 +134,50 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
       final docRef = (_draftEntryId != null)
           ? widget.journalRef.doc(_draftEntryId)
           : widget.journalRef.doc();
-      final imageRefs = _images
+      final mediaRefs = _images
           .where((img) => img.uploadedUrl != null && img.error == null)
+          .map((img) => img.uploadedUrl!)
+          .toList();
+      final imageRefsForWarmCache = _images
+          .where(
+            (img) =>
+                !img.isVideo && img.uploadedUrl != null && img.error == null,
+          )
           .map((img) => img.uploadedUrl!)
           .toList();
       final now = DateTime.now();
       final data = <String, dynamic>{
         'content': content,
-        'category': category,
+        'category': _kDefaultJournalCategory,
         'order': now.millisecondsSinceEpoch,
         'createdAt': FieldValue.serverTimestamp(),
-        'journalAiFeedbackRequested': _journalAiFeedbackEnabled,
+        // AI reply requests are manual from journal long-press actions.
+        'journalAiFeedbackRequested': false,
       };
-      if (imageRefs.isNotEmpty) {
-        data['imagePaths'] = imageRefs;
+      if (mediaRefs.isNotEmpty) {
+        data['imagePaths'] = mediaRefs;
       }
       await docRef.set(data);
-      await widget.journalStore?.ingestAfterRemoteCreate(
-        docRef.id,
-        <String, dynamic>{
-          'content': content,
-          'category': category,
-          'order': now.millisecondsSinceEpoch,
-          'createdAt': Timestamp.fromDate(now),
-          'journalAiFeedbackRequested': _journalAiFeedbackEnabled,
-          if (imageRefs.isNotEmpty) 'imagePaths': imageRefs,
-        },
-      );
+      await widget.journalStore
+          ?.ingestAfterRemoteCreate(docRef.id, <String, dynamic>{
+            'content': content,
+            'category': _kDefaultJournalCategory,
+            'order': now.millisecondsSinceEpoch,
+            'createdAt': Timestamp.fromDate(now),
+            'journalAiFeedbackRequested': false,
+            if (mediaRefs.isNotEmpty) 'imagePaths': mediaRefs,
+          });
       if (!mounted) return;
-      if (imageRefs.isNotEmpty) {
-        unawaited(warmJournalImageDiskCache(imageRefs));
-        unawaited(warmJournalImageMemoryCache(context, imageRefs));
+      if (imageRefsForWarmCache.isNotEmpty) {
+        unawaited(warmJournalImageDiskCache(imageRefsForWarmCache));
+        unawaited(warmJournalImageMemoryCache(context, imageRefsForWarmCache));
       }
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -256,6 +199,7 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
       for (final x in picked) {
         if (x.path.isEmpty) continue;
         final image = _JournalDraftImage(localPath: x.path);
+        image.isVideo = _isVideoPath(x.path);
         setState(() => _images.add(image));
         try {
           final url = await _uploadJournalImageNow(
@@ -281,10 +225,89 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick images: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to pick images: $e')));
     }
+  }
+
+  Future<void> _pickVideo() async {
+    if (_isSaving) return;
+    try {
+      final picked = await _picker.pickVideo(source: ImageSource.gallery);
+      if (picked == null || picked.path.isEmpty) return;
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You must be signed in to add videos.')),
+        );
+        return;
+      }
+      final media = _JournalDraftImage(localPath: picked.path)..isVideo = true;
+      setState(() => _images.add(media));
+      try {
+        final url = await _uploadJournalImageNow(
+          userId: user.uid,
+          localPath: picked.path,
+        );
+        if (!mounted) return;
+        setState(() {
+          media.uploadedUrl = url;
+          media.isUploading = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          media.error = e.toString();
+          media.isUploading = false;
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to upload video: $e')));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to pick video: $e')));
+    }
+  }
+
+  Future<void> _showMediaPickerSheet() async {
+    if (_isSaving) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Add photos'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickImages();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.video_library_outlined),
+                title: const Text('Add a video'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _pickVideo();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _removeImageAt(int index) {
@@ -292,10 +315,7 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     setState(() => _images.removeAt(index));
     final url = image.uploadedUrl;
     if (url != null && url.isNotEmpty) {
-      FirebaseStorage.instance
-          .refFromURL(url)
-          .delete()
-          .catchError((_) {});
+      FirebaseStorage.instance.refFromURL(url).delete().catchError((_) {});
     }
   }
 
@@ -310,428 +330,23 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     if (_isSaving) return;
     if (_images.any((img) => img.isUploading)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please wait for photo uploads to finish.')),
+        const SnackBar(
+          content: Text('Please wait for photo uploads to finish.'),
+        ),
       );
       return;
     }
     if (_images.any((img) => img.error != null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Some photos failed to upload. Remove them or add again.'),
+          content: Text(
+            'Some photos failed to upload. Remove them or add again.',
+          ),
         ),
       );
       return;
     }
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setModalState) {
-          const aiPurple = Color(0xFF6366F1);
-
-          return SafeArea(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Do u wanna share your journal with AI?',
-                          style: TextStyle(
-                            fontSize: 13,
-                            height: 1.35,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'They might be slow texters. forgive them',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.3,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          height: 40,
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _kCharacterLabels.length + 1,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                                  final isNoShare = index == 0;
-                                  final id = isNoShare
-                                      ? _kNoShareId
-                                      : _kCharacterLabels.keys.elementAt(index - 1);
-                                  final isSelected = isNoShare
-                                      ? !_journalAiFeedbackEnabled
-                                      : (_journalAiFeedbackEnabled &&
-                                          id == _journalAiCharacter);
-                                  final icon = kJournalAiCharacterIcons[id] ??
-                                      (isNoShare
-                                          ? Icons.block_rounded
-                                          : Icons.smart_toy_outlined);
-                                  final label =
-                                      isNoShare ? 'シェアしない' : (_kCharacterLabels[id] ?? id);
-                                  final desc =
-                                      isNoShare
-                                          ? 'この投稿は AI にシェアしません。'
-                                          : (_kCharacterDescriptions[id] ?? '');
-                                  final locked = !isNoShare &&
-                                      !isJournalCharacterUnlockedForList(
-                                        id,
-                                        _unlockedJournalIds,
-                                      );
-                                  return InkWell(
-                                    borderRadius: BorderRadius.circular(999),
-                                    onTap: () async {
-                                      if (isNoShare) {
-                                        setState(() {
-                                          _journalAiFeedbackEnabled = false;
-                                        });
-                                        setModalState(() {});
-                                        final prefs =
-                                            await SharedPreferences.getInstance();
-                                        await prefs.setBool(
-                                          _prefJournalAiFeedback,
-                                          false,
-                                        );
-                                        return;
-                                      }
-                                      final user = FirebaseAuth.instance.currentUser;
-                                      if (user != null &&
-                                          !isJournalCharacterUnlockedForList(
-                                            id,
-                                            _unlockedJournalIds,
-                                          )) {
-                                        final cost =
-                                            unlockCostForJournalCharacter(id);
-                                        final unlock = await showDialog<bool>(
-                                          context: sheetContext,
-                                          builder: (ctx) => AlertDialog(
-                                            title: Text(
-                                              'Unlock ${_kCharacterLabels[id] ?? id}?',
-                                            ),
-                                            content: Text(
-                                              'Spend $cost task coins to use this voice. '
-                                              'You can also unlock from Journal AI notes in settings.',
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.of(ctx).pop(false),
-                                                child: const Text('Cancel'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () =>
-                                                    Navigator.of(ctx).pop(true),
-                                                child: const Text('Unlock'),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                        if (unlock != true || !mounted) return;
-                                        final r = await unlockJournalCharacterWithCoins(
-                                          uid: user.uid,
-                                          characterId: id,
-                                        );
-                                        if (!mounted) return;
-                                        if (r == JournalUnlockResult.notEnoughCoins) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text('Not enough coins.'),
-                                            ),
-                                          );
-                                          return;
-                                        }
-                                        if (r == JournalUnlockResult.error) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'Could not unlock. Try again.',
-                                              ),
-                                            ),
-                                          );
-                                          return;
-                                        }
-                                        setState(() {
-                                          if (!_unlockedJournalIds.contains(id)) {
-                                            _unlockedJournalIds = [
-                                              ..._unlockedJournalIds,
-                                              id,
-                                            ]..sort();
-                                          }
-                                        });
-                                      }
-                                      final nicknameCtrl = TextEditingController(
-                                        text: _journalGreetingName,
-                                      );
-                                      final shouldUse = await showDialog<bool>(
-                                        context: sheetContext,
-                                        builder: (dialogContext) {
-                                          return AlertDialog(
-                                            title: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                CircleAvatar(
-                                                  radius: 30,
-                                                  backgroundColor:
-                                                      Colors.grey.shade200,
-                                                  child: ClipOval(
-                                                    child:
-                                                        JournalAiCharacterAvatar(
-                                                      characterId: id,
-                                                      size: 60,
-                                                      iconColor: Colors
-                                                          .grey.shade700,
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 10),
-                                                Text(label),
-                                              ],
-                                            ),
-                                            content: SingleChildScrollView(
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.stretch,
-                                                children: [
-                                                  Text(desc),
-                                                  const SizedBox(height: 16),
-                                                  TextField(
-                                                    controller: nicknameCtrl,
-                                                    maxLength:
-                                                        _kJournalGreetingMaxChars,
-                                                    decoration:
-                                                        const InputDecoration(
-                                                      labelText:
-                                                          '呼ばれたい名前（通知の冒頭など）',
-                                                      hintText: '例：ねね',
-                                                      border:
-                                                          OutlineInputBorder(),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () =>
-                                                    Navigator.of(dialogContext)
-                                                        .pop(false),
-                                                child: const Text('Close'),
-                                              ),
-                                              FilledButton(
-                                                onPressed: () =>
-                                                    Navigator.of(dialogContext)
-                                                        .pop(true),
-                                                child: const Text('このキャラを使う'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                      final nickTrim =
-                                          nicknameCtrl.text.trim();
-                                      // Dialog route can still be unmounting when
-                                      // showDialog completes; defer dispose so the
-                                      // TextField is not attached to a disposed controller.
-                                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                                        nicknameCtrl.dispose();
-                                      });
-                                      if (!mounted) return;
-                                      if (shouldUse == true) {
-                                        if (nickTrim.length >
-                                            _kJournalGreetingMaxChars) {
-                                          if (mounted) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  '名前は$_kJournalGreetingMaxChars文字までです。',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                          return;
-                                        }
-                                        setState(() {
-                                          _journalAiCharacter = id;
-                                          _journalAiFeedbackEnabled = true;
-                                          _journalGreetingName = nickTrim;
-                                        });
-                                        setModalState(() {});
-                                        final prefs =
-                                            await SharedPreferences.getInstance();
-                                        await prefs.setBool(
-                                          _prefJournalAiFeedback,
-                                          true,
-                                        );
-                                        final user =
-                                            FirebaseAuth.instance.currentUser;
-                                        if (user != null) {
-                                          await FirebaseFirestore.instance
-                                              .collection('todo')
-                                              .doc(user.uid)
-                                              .set(
-                                            {
-                                              'journalAiCharacter': id,
-                                              'journalDailyReminderGreetingName':
-                                                  nickTrim,
-                                            },
-                                            SetOptions(merge: true),
-                                          );
-                                        }
-                                      }
-                                    },
-                                    child: Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: isSelected
-                                            ? aiPurple.withValues(alpha: 0.12)
-                                            : locked
-                                                ? Colors.grey.shade200
-                                                : Colors.grey.shade100,
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                        border: isSelected
-                                            ? Border.all(
-                                                color: aiPurple
-                                                    .withValues(alpha: 0.45),
-                                              )
-                                            : locked
-                                                ? Border.all(
-                                                    color: Colors.grey.shade400,
-                                                  )
-                                                : null,
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: isNoShare
-                                          ? Icon(
-                                              icon,
-                                              size: 20,
-                                              color: isSelected
-                                                  ? aiPurple
-                                                  : Colors.grey.shade600,
-                                            )
-                                          : Stack(
-                                              clipBehavior: Clip.none,
-                                              alignment: Alignment.center,
-                                              children: [
-                                                ClipOval(
-                                                  child: SizedBox(
-                                                    width: 34,
-                                                    height: 34,
-                                                    child:
-                                                        JournalAiCharacterAvatar(
-                                                      characterId: id,
-                                                      size: 34,
-                                                      muted: locked,
-                                                      iconColor: locked
-                                                          ? Colors.grey.shade500
-                                                          : isSelected
-                                                              ? aiPurple
-                                                              : Colors
-                                                                  .grey.shade600,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (locked)
-                                                  Positioned(
-                                                    right: -1,
-                                                    bottom: -1,
-                                                    child: Material(
-                                                      elevation: 1.5,
-                                                      shadowColor:
-                                                          Colors.black26,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                        5,
-                                                      ),
-                                                      color: Colors.white,
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .symmetric(
-                                                          horizontal: 3,
-                                                          vertical: 2,
-                                                        ),
-                                                        child: Icon(
-                                                          Icons.lock_rounded,
-                                                          size: 11,
-                                                          color: Colors
-                                                              .grey.shade800,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                    ),
-                                  );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Choose category',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade800,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        ..._kJournalCategories.map((category) {
-                          return Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () {
-                                Navigator.of(sheetContext).pop();
-                                _saveWithCategory(category);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(0, 12, 0, 12),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    _categoryLabel(category),
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.grey.shade800,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
+    _saveJournalEntry();
   }
 
   Future<bool> _handleWillPop() async {
@@ -752,15 +367,18 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(_BackAction.cancel),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_BackAction.cancel),
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(_BackAction.discard),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_BackAction.discard),
               child: const Text('Discard'),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(_BackAction.save),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(_BackAction.save),
               child: const Text('Save'),
             ),
           ],
@@ -778,21 +396,21 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
     return false;
   }
 
-  static const Color _pageBackground = Color(0xFFF8F9FC);
-
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pageBg = Theme.of(context).scaffoldBackgroundColor;
     final mq = MediaQuery.of(context);
     final keyboardInset = mq.viewInsets.bottom;
     final keyboardOpen = keyboardInset > 0;
     // When the keyboard is up, the body is already laid out above it; keep only
     // a small gap so thumbnails don't sit under the FAB. Avoid the full FAB +
     // safe-area reserve, which reads as a large empty strip above the keyboard.
-    final bottomPadding = keyboardOpen
-        ? 10.0
-        : mq.padding.bottom + 72;
+    final bottomPadding = keyboardOpen ? 10.0 : mq.padding.bottom + 72;
     final appBar = AppBar(
       flexibleSpace: const LiquidGlassAppBarBackground(),
+      foregroundColor: scheme.onSurface,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
@@ -801,12 +419,12 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
       title: Text(
         'New entry',
         style: TextStyle(
-          color: Colors.grey.shade800,
+          color: scheme.onSurface,
           fontWeight: FontWeight.w600,
           fontSize: 18,
         ),
       ),
-      iconTheme: IconThemeData(color: Colors.grey.shade700),
+      iconTheme: IconThemeData(color: scheme.onSurfaceVariant),
       actions: [
         Padding(
           padding: const EdgeInsets.only(right: 8),
@@ -821,12 +439,16 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
                       color: Theme.of(context).colorScheme.primary,
                     ),
                   )
-                : Icon(Icons.check_rounded, size: 20, color: Colors.grey.shade700),
+                : Icon(
+                    Icons.check_rounded,
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  ),
             label: Text(
               'Save',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+                color: scheme.onSurface,
               ),
             ),
           ),
@@ -846,18 +468,21 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
       },
       child: Scaffold(
         extendBodyBehindAppBar: true,
-        backgroundColor: _pageBackground,
+        backgroundColor: pageBg,
         floatingActionButton: FloatingActionButton(
           heroTag: 'journal_add_photos',
-          onPressed: _isSaving ? null : _pickImages,
-          tooltip: 'Add photos',
+          onPressed: _isSaving ? null : _showMediaPickerSheet,
+          tooltip: 'Add media',
+          backgroundColor: isDark ? scheme.primary : const Color(0xFFDFE2EA),
+          foregroundColor: isDark ? scheme.onPrimary : const Color(0xFF1C1E24),
           child: const Icon(Icons.add_photo_alternate_rounded),
         ),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         appBar: appBar,
         body: Padding(
           padding: EdgeInsets.only(
-            top: MediaQuery.paddingOf(context).top + appBar.preferredSize.height,
+            top:
+                MediaQuery.paddingOf(context).top + appBar.preferredSize.height,
           ),
           child: SafeArea(
             top: false,
@@ -877,25 +502,28 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
                         style: TextStyle(
                           fontSize: 16,
                           height: 1.5,
-                          color: Colors.grey.shade800,
+                          color: scheme.onSurface,
                         ),
                         decoration: InputDecoration(
                           hintText: "What's on your mind?",
                           hintStyle: TextStyle(
-                            color: Colors.grey.shade400,
+                            color: scheme.onSurfaceVariant,
                             fontSize: 16,
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: _pageBackground),
+                            borderSide: BorderSide(color: pageBg),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: _pageBackground),
+                            borderSide: BorderSide(color: pageBg),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: const BorderSide(color: _pageBackground),
+                            borderSide: BorderSide(
+                              color: pageBg,
+                              width: 1.2,
+                            ),
                           ),
                           contentPadding: const EdgeInsets.fromLTRB(
                             16,
@@ -904,7 +532,7 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
                             20,
                           ),
                           filled: true,
-                          fillColor: _pageBackground,
+                          fillColor: scheme.surfaceContainerHighest,
                         ),
                       ),
                     ),
@@ -915,15 +543,17 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: _images.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 8),
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
                           itemBuilder: (context, index) {
                             final img = _images[index];
                             final path = img.localPath;
                             return Stack(
                               alignment: Alignment.topRight,
                               children: [
-                                _JournalAddPhotoPreview(filePath: path),
+                                _JournalAddMediaPreview(
+                                  filePath: path,
+                                  isVideo: img.isVideo,
+                                ),
                                 if (img.isUploading)
                                   Positioned.fill(
                                     child: Container(
@@ -996,10 +626,14 @@ class _AddJournalEntryPageState extends State<AddJournalEntryPage> {
 }
 
 /// Local photo chip: full image with [BoxFit.contain], letterbox filled by a blurred [BoxFit.cover] layer.
-class _JournalAddPhotoPreview extends StatelessWidget {
-  const _JournalAddPhotoPreview({required this.filePath});
+class _JournalAddMediaPreview extends StatelessWidget {
+  const _JournalAddMediaPreview({
+    required this.filePath,
+    required this.isVideo,
+  });
 
   final String filePath;
+  final bool isVideo;
   static const double _blurSigma = 12;
 
   Widget _image(BoxFit fit) {
@@ -1007,9 +641,13 @@ class _JournalAddPhotoPreview extends StatelessWidget {
       File(filePath),
       fit: fit,
       errorBuilder: (context, _, _) => ColoredBox(
-        color: Colors.grey.shade300,
-        child: const Center(
-          child: Icon(Icons.broken_image_outlined, size: 24),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        child: Center(
+          child: Icon(
+            Icons.broken_image_outlined,
+            size: 24,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );
@@ -1026,20 +664,37 @@ class _JournalAddPhotoPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isVideo) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 88,
+          height: 88,
+          child: ColoredBox(
+            color: Colors.black87,
+            child: const Center(
+              child: Icon(
+                Icons.play_circle_fill_rounded,
+                color: Colors.white,
+                size: 34,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
         width: 88,
         height: 88,
         child: ColoredBox(
-          color: Colors.grey.shade200,
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
           child: Stack(
             fit: StackFit.expand,
             children: [
               _layer(BoxFit.cover, blurred: true),
-              Positioned.fill(
-                child: _layer(BoxFit.contain, blurred: false),
-              ),
+              Positioned.fill(child: _layer(BoxFit.contain, blurred: false)),
             ],
           ),
         ),
@@ -1057,4 +712,5 @@ class _JournalDraftImage {
   String? uploadedUrl;
   String? error;
   bool isUploading = true;
+  bool isVideo = false;
 }

@@ -39,11 +39,13 @@ class _AppStartupState extends State<AppStartup> {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
-      try {
-        await initializeGoogleSignInForApp();
-      } catch (e, st) {
-        debugPrint('Google Sign-In init failed (sign-in may be unavailable): $e');
-        debugPrint('$st');
+      if (!kIsWeb) {
+        try {
+          await initializeGoogleSignInForApp();
+        } catch (e, st) {
+          debugPrint('Google Sign-In init failed (sign-in may be unavailable): $e');
+          debugPrint('$st');
+        }
       }
       if (!kIsWeb) {
         await Hive.initFlutter();

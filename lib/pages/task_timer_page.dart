@@ -19,7 +19,9 @@ class TaskTimerPage extends StatefulWidget {
 }
 
 class _TaskTimerPageState extends State<TaskTimerPage> {
-  static const int _kMaxMinutes = 24 * 60;
+  // Keep the interactive range focused on realistic task sessions, so the
+  // slider feels precise (small drags don't jump huge durations).
+  static const int _kMaxMinutes = 180; // up to 3 hours
 
   late int _targetMinutes;
   late int _remainingSeconds;
@@ -118,22 +120,29 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
   @override
   Widget build(BuildContext context) {
     final canAdjust = !_running;
+    final totalTargetSeconds = _targetMinutes * 60;
+    final bool canResume =
+        !_running && _remainingSeconds > 0 && _remainingSeconds < totalTargetSeconds;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final titleColor = scheme.onSurface;
+    final bodyMuted = scheme.onSurfaceVariant;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor,
         elevation: 0,
         scrolledUnderElevation: 1,
         title: Text(
           'Timer',
           style: TextStyle(
-            color: Colors.grey.shade800,
+            color: titleColor,
             fontWeight: FontWeight.w600,
             fontSize: 18,
           ),
         ),
-        iconTheme: IconThemeData(color: Colors.grey.shade700),
+        iconTheme: IconThemeData(color: titleColor),
       ),
       body: SafeArea(
         child: Padding(
@@ -151,7 +160,7 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
                   fontSize: 17,
                   height: 1.35,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800,
+                  color: titleColor,
                 ),
               ),
               const SizedBox(height: 32),
@@ -162,7 +171,7 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
                     fontSize: 56,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 2,
-                    color: Colors.grey.shade900,
+                    color: titleColor,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -175,14 +184,14 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.grey.shade600,
+                  color: bodyMuted,
                 ),
               ),
               const SizedBox(height: 20),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  IconButton.filledTonal(
+                  IconButton.filled(
                     onPressed: canAdjust && _targetMinutes > 1
                         ? () => _nudgeMinutes(-1)
                         : null,
@@ -190,7 +199,7 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
                     tooltip: '-1 min',
                   ),
                   const SizedBox(width: 8),
-                  IconButton.filledTonal(
+                  IconButton.filled(
                     onPressed: canAdjust && _targetMinutes < _kMaxMinutes
                         ? () => _nudgeMinutes(1)
                         : null,
@@ -248,15 +257,25 @@ class _TaskTimerPageState extends State<TaskTimerPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   FilledButton.icon(
-                    onPressed: _running ? _pause : _start,
-                    icon: Icon(_running ? Icons.pause : Icons.play_arrow),
-                    label: Text(_running ? 'Pause' : 'Start'),
+                    onPressed: _running
+                        ? _pause
+                        : _start,
+                    icon: Icon(
+                      _running
+                          ? Icons.pause
+                          : (canResume ? Icons.play_arrow_rounded : Icons.play_arrow),
+                    ),
+                    label: Text(
+                      _running
+                          ? 'Pause'
+                          : (canResume ? 'Resume' : 'Start'),
+                    ),
                   ),
                   const SizedBox(width: 12),
                   OutlinedButton.icon(
                     onPressed: _reset,
-                    icon: const Icon(Icons.restart_alt),
-                    label: const Text('Reset'),
+                    icon: const Icon(Icons.stop_rounded),
+                    label: const Text('Stop'),
                   ),
                 ],
               ),

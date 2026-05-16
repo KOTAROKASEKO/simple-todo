@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -12,14 +15,65 @@ const int _id1 = 7001;
 const int _id2 = 12001;
 const int _id3 = 21001;
 
+class SuperImportantAlarmPayload {
+  const SuperImportantAlarmPayload({
+    required this.title,
+    this.scheduledAtMillis,
+  });
+
+  final String title;
+  final int? scheduledAtMillis;
+}
+
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
+  final StreamController<SuperImportantAlarmPayload> _alarmController =
+      StreamController<SuperImportantAlarmPayload>.broadcast();
+
+  /// Dart-side timers that re-fire super-important alarms while the app is
+  /// actively running. This is the safety net for the Android 14+ case where
+  /// the system-level full-screen intent is downgraded to a heads-up
+  /// notification whenever the device is unlocked. Keyed by notification id
+  /// so [cancelReminder] can clean them up.
+  final Map<int, Timer> _superImportantTimers = <int, Timer>{};
+  final Map<int, SuperImportantAlarmPayload> _superImportantPayloads =
+      <int, SuperImportantAlarmPayload>{};
 
   bool _initialized = false;
+
+  Stream<SuperImportantAlarmPayload> get superImportantAlarms =>
+      _alarmController.stream;
+
+  SuperImportantAlarmPayload? _parseAlarmPayload(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) return null;
+      final kind = decoded['kind'];
+      if (kind != 'super_important_task_alarm') return null;
+      final titleRaw = decoded['title'];
+      final title =
+          titleRaw is String && titleRaw.trim().isNotEmpty ? titleRaw.trim() : 'Task';
+      final msRaw = decoded['scheduledAtMillis'];
+      return SuperImportantAlarmPayload(
+        title: title,
+        scheduledAtMillis: msRaw is num ? msRaw.toInt() : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _emitAlarmFromPayload(String? payload) {
+    final parsed = _parseAlarmPayload(payload);
+    if (parsed != null) {
+      _alarmController.add(parsed);
+    }
+  }
 
   Future<void> _createAndroidChannels() async {
     final android = _plugin.resolvePlatformSpecificImplementation<
@@ -67,8 +121,17 @@ class NotificationService {
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    await _plugin.initialize(initSettings);
+    await _plugin.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        _emitAlarmFromPayload(response.payload);
+      },
+    );
     await _createAndroidChannels();
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp == true) {
+      _emitAlarmFromPayload(launchDetails?.notificationResponse?.payload);
+    }
     _initialized = true;
   }
 
@@ -87,6 +150,28 @@ class NotificationService {
     }
 
     return true;
+  }
+
+  Future<bool> requestNotificationPermission() async {
+    if (kIsWeb) return false;
+    if (!_initialized) {
+      await init();
+    }
+    return _requestPermission();
+  }
+
+  Future<bool> areNotificationsEnabled() async {
+    if (kIsWeb) return false;
+    if (!_initialized) {
+      await init();
+    }
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) {
+      return false;
+    }
+    final enabled = await android.areNotificationsEnabled();
+    return enabled == true;
   }
 
   Future<AndroidScheduleMode> _resolveScheduleMode() async {
@@ -113,18 +198,9 @@ class NotificationService {
     return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
-  /// Converts a local [DateTime] to a [tz.TZDateTime] in UTC,
-  /// using Dart's built-in timezone awareness instead of tz.local.
+  /// Converts a local [DateTime] to [tz.local] clock time.
   tz.TZDateTime _toTZDateTime(DateTime localTime) {
-    final utc = localTime.toUtc();
-    return tz.TZDateTime.utc(
-      utc.year,
-      utc.month,
-      utc.day,
-      utc.hour,
-      utc.minute,
-      utc.second,
-    );
+    return tz.TZDateTime.from(localTime, tz.local);
   }
 
   /// Schedules a reminder notification.
@@ -176,6 +252,19 @@ class NotificationService {
 
     final scheduleMode = await _resolveScheduleMode();
     debugPrint('[NotificationService] Schedule mode: $scheduleMode');
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (superImportant && android != null) {
+      await android.requestFullScreenIntentPermission();
+    }
+
+    final payload = superImportant
+        ? jsonEncode(<String, dynamic>{
+            'kind': 'super_important_task_alarm',
+            'title': displayTitle,
+            'scheduledAtMillis': scheduledTime.millisecondsSinceEpoch,
+          })
+        : null;
 
     final androidDetails = superImportant
         ? AndroidNotificationDetails(
@@ -190,6 +279,7 @@ class NotificationService {
             enableVibration: true,
             vibrationPattern: Int64List.fromList([0, 400, 180, 400, 180, 600]),
             audioAttributesUsage: AudioAttributesUsage.alarm,
+            fullScreenIntent: true,
             styleInformation: BigTextStyleInformation(
               displayTitle,
               contentTitle: 'Task reminder',
@@ -223,11 +313,82 @@ class NotificationService {
               )
             : null,
       ),
+      payload: payload,
       androidScheduleMode: scheduleMode,
     );
 
+    if (superImportant) {
+      _armSuperImportantDartTimer(
+        id: id,
+        scheduledTime: scheduledTime,
+        payload: SuperImportantAlarmPayload(
+          title: displayTitle,
+          scheduledAtMillis: scheduledTime.millisecondsSinceEpoch,
+        ),
+      );
+    }
+
     debugPrint('[NotificationService] Successfully scheduled notification');
     return id;
+  }
+
+  /// Starts (or replaces) a Dart-side timer that emits the alarm payload when
+  /// [scheduledTime] is reached. This lets the app auto-open the full-screen
+  /// alarm page while it is running, even on Android 14+ where the system
+  /// may only show the heads-up notification (because the device is unlocked).
+  void _armSuperImportantDartTimer({
+    required int id,
+    required DateTime scheduledTime,
+    required SuperImportantAlarmPayload payload,
+  }) {
+    _superImportantTimers.remove(id)?.cancel();
+    _superImportantPayloads[id] = payload;
+    final delay = scheduledTime.difference(DateTime.now());
+    if (delay.isNegative) {
+      return;
+    }
+    _superImportantTimers[id] = Timer(delay, () {
+      _superImportantTimers.remove(id);
+      _superImportantPayloads.remove(id);
+      if (!_alarmController.isClosed) {
+        _alarmController.add(payload);
+      }
+    });
+  }
+
+  /// Fires any stored super-important alarm whose scheduled time has already
+  /// passed. Intended to be called when the app resumes from background in
+  /// case the Dart [Timer] was suspended by the OS and never fired on time.
+  void flushDueSuperImportantAlarms() {
+    if (_superImportantPayloads.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final due = <int>[];
+    _superImportantPayloads.forEach((id, payload) {
+      final ts = payload.scheduledAtMillis;
+      if (ts != null && ts <= now) {
+        due.add(id);
+      }
+    });
+    for (final id in due) {
+      final payload = _superImportantPayloads.remove(id);
+      _superImportantTimers.remove(id)?.cancel();
+      if (payload != null && !_alarmController.isClosed) {
+        _alarmController.add(payload);
+      }
+    }
+  }
+
+  /// Cancels a scheduled reminder and its in-app safety timer, if any.
+  Future<void> cancelReminder(int id) async {
+    _superImportantTimers.remove(id)?.cancel();
+    _superImportantPayloads.remove(id);
+    if (kIsWeb) return;
+    if (!_initialized) return;
+    try {
+      await _plugin.cancel(id);
+    } catch (e) {
+      debugPrint('[NotificationService] Failed to cancel id=$id: $e');
+    }
   }
 
   DateTime _nextInstanceOfTime({

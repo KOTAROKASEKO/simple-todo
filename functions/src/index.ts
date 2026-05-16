@@ -8,8 +8,13 @@ import {
 } from "./journal_daily_reminder";
 import {
   onJournalEntryCreatedQueueAi,
+  onJournalEntryAiRequestedQueueAi,
   deliverRandomJournalAiFeedback,
 } from "./journal_ai_surprise";
+import {
+  onUserRecipeWrittenSyncPublicRecipes,
+  searchPublicRecipes,
+} from "./public_recipes_algolia";
 
 admin.initializeApp();
 
@@ -18,7 +23,10 @@ export {
   sendDailyCheckReminders,
   sendJournalDailyReminders,
   onJournalEntryCreatedQueueAi,
+  onJournalEntryAiRequestedQueueAi,
   deliverRandomJournalAiFeedback,
+  onUserRecipeWrittenSyncPublicRecipes,
+  searchPublicRecipes,
 };
 
 /** Sends one test "Check your tasks" FCM to the current user (for debugging). */

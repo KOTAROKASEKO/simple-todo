@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:simpletodo/notification_service.dart';
 
 /// Full-screen page to add a new task. Calls [onCreateTask] on save.
 class AddTaskPage extends StatefulWidget {
@@ -16,7 +17,8 @@ class AddTaskPage extends StatefulWidget {
     TimeOfDay? reminderTime,
     bool reminderSuperImportant,
     List<String>? checklistItems,
-  }) onCreateTask;
+  })
+  onCreateTask;
 
   @override
   State<AddTaskPage> createState() => _AddTaskPageState();
@@ -34,6 +36,24 @@ class _AddTaskPageState extends State<AddTaskPage> {
   bool _reminderSuperImportant = false;
   bool _isSaving = false;
   bool _checklistSortMode = false;
+
+  Future<bool> _ensureReminderPermission() async {
+    final enabled = await NotificationService.instance
+        .areNotificationsEnabled();
+    if (enabled) return true;
+    final granted = await NotificationService.instance
+        .requestNotificationPermission();
+    if (granted) return true;
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Notification permission is required for reminders. Please allow it in settings.',
+        ),
+      ),
+    );
+    return false;
+  }
 
   @override
   void dispose() {
@@ -74,11 +94,14 @@ class _AddTaskPageState extends State<AddTaskPage> {
   }
 
   Widget _buildChecklistRow({
+    required BuildContext context,
     required Key key,
     required int index,
     required TextEditingController controller,
     required bool sortMode,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final blendBorder = Theme.of(context).scaffoldBackgroundColor;
     final row = Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -90,7 +113,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                 padding: const EdgeInsets.only(right: 8),
                 child: Icon(
                   Icons.drag_handle,
-                  color: Colors.grey.shade600,
+                  color: scheme.onSurfaceVariant,
                   size: 24,
                 ),
               ),
@@ -100,15 +123,25 @@ class _AddTaskPageState extends State<AddTaskPage> {
               controller: controller,
               focusNode: _checklistFocusNodes[index],
               textInputAction: TextInputAction.next,
+              style: TextStyle(color: scheme.onSurface),
               onEditingComplete: () => _focusNextChecklistField(index),
               decoration: InputDecoration(
                 hintText: 'Checklist item ${index + 1}',
+                hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(color: blendBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: blendBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: blendBorder, width: 1.2),
                 ),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: scheme.surfaceContainerHighest,
               ),
             ),
           ),
@@ -127,10 +160,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                   }
                 });
               },
-              icon: Icon(
-                Icons.delete_outline,
-                color: Colors.grey.shade600,
-              ),
+              icon: Icon(Icons.delete_outline, color: scheme.onSurfaceVariant),
             ),
         ],
       ),
@@ -141,9 +171,9 @@ class _AddTaskPageState extends State<AddTaskPage> {
   Future<void> _save() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a task title.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a task title.')));
       return;
     }
     setState(() => _isSaving = true);
@@ -164,20 +194,23 @@ class _AddTaskPageState extends State<AddTaskPage> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final blendBorder = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 1,
         leading: IconButton(
-          icon: Icon(Icons.close, color: Colors.grey.shade700),
+          icon: Icon(Icons.close, color: scheme.onSurfaceVariant),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
           'New task',
           style: TextStyle(
-            color: Colors.grey.shade800,
+            color: scheme.onSurface,
             fontWeight: FontWeight.w600,
             fontSize: 18,
           ),
@@ -193,14 +226,14 @@ class _AddTaskPageState extends State<AddTaskPage> {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
+                        color: scheme.primary,
                       ),
                     )
                   : Text(
                       'Create',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade800,
+                        color: scheme.onSurface,
                       ),
                     ),
             ),
@@ -215,24 +248,31 @@ class _AddTaskPageState extends State<AddTaskPage> {
             children: [
               Text(
                 'For ${widget.dateLabel}',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),
               TextField(
                 controller: _titleController,
                 autofocus: true,
                 textInputAction: TextInputAction.next,
+                style: TextStyle(color: scheme.onSurface),
                 decoration: InputDecoration(
                   hintText: 'Task title',
+                  hintStyle: TextStyle(color: scheme.onSurfaceVariant),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
+                    borderSide: BorderSide(color: blendBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: blendBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: blendBorder, width: 1.2),
                   ),
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: scheme.surfaceContainerHighest,
                 ),
               ),
               const SizedBox(height: 20),
@@ -243,7 +283,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
+                      color: scheme.onSurface,
                     ),
                   ),
                   const Spacer(),
@@ -256,11 +296,11 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     icon: Icon(
                       _checklistSortMode ? Icons.check : Icons.unfold_more,
                       size: 18,
-                      color: Colors.grey.shade700,
+                      color: scheme.onSurfaceVariant,
                     ),
                     label: Text(
                       _checklistSortMode ? 'Done' : 'Sort order',
-                      style: TextStyle(color: Colors.grey.shade700),
+                      style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
                   ),
                   TextButton.icon(
@@ -270,8 +310,11 @@ class _AddTaskPageState extends State<AddTaskPage> {
                         _checklistFocusNodes.add(FocusNode());
                       });
                     },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add item'),
+                    icon: Icon(Icons.add, size: 18, color: scheme.primary),
+                    label: Text(
+                      'Add item',
+                      style: TextStyle(color: scheme.primary),
+                    ),
                   ),
                 ],
               ),
@@ -293,6 +336,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                   itemBuilder: (context, index) {
                     final controller = _checklistControllers[index];
                     return _buildChecklistRow(
+                      context: context,
                       key: ObjectKey(controller),
                       index: index,
                       controller: controller,
@@ -304,6 +348,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                 ...List.generate(_checklistControllers.length, (index) {
                   final controller = _checklistControllers[index];
                   return _buildChecklistRow(
+                    context: context,
                     key: ObjectKey(controller),
                     index: index,
                     controller: controller,
@@ -314,7 +359,6 @@ class _AddTaskPageState extends State<AddTaskPage> {
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _recurring,
-                activeColor: const Color(0xFF111111),
                 checkboxShape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -323,11 +367,15 @@ class _AddTaskPageState extends State<AddTaskPage> {
                 },
                 title: Row(
                   children: [
-                    Icon(Icons.repeat_rounded, size: 18, color: Colors.grey.shade700),
+                    Icon(
+                      Icons.repeat_rounded,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Repeat daily',
-                      style: TextStyle(color: Colors.grey.shade800),
+                      style: TextStyle(color: scheme.onSurface),
                     ),
                   ],
                 ),
@@ -336,8 +384,12 @@ class _AddTaskPageState extends State<AddTaskPage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _hasReminder,
-                activeThumbColor: const Color(0xFF111111),
-                onChanged: (value) {
+                activeThumbColor: scheme.primary,
+                onChanged: (value) async {
+                  if (value) {
+                    final ok = await _ensureReminderPermission();
+                    if (!ok) return;
+                  }
                   setState(() {
                     _hasReminder = value;
                     if (value && _reminderTime == null) {
@@ -350,7 +402,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                 },
                 title: Text(
                   'Add reminder',
-                  style: TextStyle(color: Colors.grey.shade800),
+                  style: TextStyle(color: scheme.onSurface),
                 ),
               ),
               if (_hasReminder)
@@ -361,14 +413,15 @@ class _AddTaskPageState extends State<AddTaskPage> {
                       Icon(
                         Icons.access_time_rounded,
                         size: 19,
-                        color: Colors.grey.shade600,
+                        color: scheme.onSurfaceVariant,
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () async {
                           final picked = await showTimePicker(
                             context: context,
-                            initialTime: _reminderTime ??
+                            initialTime:
+                                _reminderTime ??
                                 const TimeOfDay(hour: 9, minute: 0),
                             initialEntryMode: TimePickerEntryMode.input,
                           );
@@ -382,8 +435,8 @@ class _AddTaskPageState extends State<AddTaskPage> {
                             vertical: 8,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            border: Border.all(color: Colors.grey.shade300),
+                            color: scheme.surfaceContainerHigh,
+                            border: Border.all(color: scheme.outline),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
@@ -391,7 +444,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade800,
+                              color: scheme.onSurface,
                             ),
                           ),
                         ),
@@ -402,8 +455,12 @@ class _AddTaskPageState extends State<AddTaskPage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _reminderSuperImportant,
-                activeThumbColor: const Color(0xFF111111),
-                onChanged: (value) {
+                activeThumbColor: scheme.primary,
+                onChanged: (value) async {
+                  if (value) {
+                    final ok = await _ensureReminderPermission();
+                    if (!ok) return;
+                  }
                   setState(() {
                     _reminderSuperImportant = value;
                     if (value) {
@@ -423,7 +480,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                     Expanded(
                       child: Text(
                         'Super important',
-                        style: TextStyle(color: Colors.grey.shade800),
+                        style: TextStyle(color: scheme.onSurface),
                       ),
                     ),
                   ],
@@ -434,7 +491,7 @@ class _AddTaskPageState extends State<AddTaskPage> {
                       : 'Turning this on also enables Add reminder.',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: scheme.onSurfaceVariant,
                   ),
                 ),
               ),

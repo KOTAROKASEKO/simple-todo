@@ -1,0 +1,15 @@
+name: simpletodo_data_core
+description: Shared contracts/models for local data stores.
+publish_to: "none"
+version: 0.0.1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cloud_firestore: ^5.6.7
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
